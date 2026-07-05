@@ -54,7 +54,7 @@ GHOST_PORT=2368
 
 ## Prepare Env
 
-Run this module from the same root-owned checkout where you downloaded `server-scripts`.
+Run this module from the same root-owned checkout where you downloaded `ubuntu-scripts`.
 The repository stays there. `GHOST_SYSTEM_USER` is only the Linux user that owns and runs Ghost.
 
 Clone the repository on the server:
@@ -62,8 +62,8 @@ Clone the repository on the server:
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts
 ```
 
 Prepare the Ghost env:
@@ -96,18 +96,18 @@ See also: [service-users.md](service-users.md)
 Install Caddy first:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
 Then run Ghost setup as root:
 
 ```bash
-cd ~/server-scripts/ghost
+cd ~/ubuntu-scripts/ghost
 bash setup-ghost.sh
 ```
 
-The script creates `/etc/sudoers.d/90-server-scripts-ghost-<GHOST_SYSTEM_USER>` so Ghost-CLI can configure and restart systemd services without an interactive password prompt.
+The script creates `/etc/sudoers.d/90-ubuntu-scripts-ghost-<GHOST_SYSTEM_USER>` so Ghost-CLI can configure and restart systemd services without an interactive password prompt.
 
 It also writes `"staffDeviceVerification": false` into Ghost's `config.production.json` by default.
 
@@ -150,7 +150,7 @@ Use that only when you plan to configure Caddy manually.
 ## Verify
 
 ```bash
-cd ~/server-scripts/ghost
+cd ~/ubuntu-scripts/ghost
 bash check-setup.sh
 ```
 

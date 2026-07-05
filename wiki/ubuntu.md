@@ -84,8 +84,8 @@ Install git and clone the repository:
 
 ```bash
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts/ubuntu
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts/ubuntu
 cp env.example .env
 nano .env
 bash setup-ubuntu.sh
@@ -104,7 +104,7 @@ Only close the root session after the new SSH login works.
 From the repository root:
 
 ```bash
-cd ~/server-scripts/ubuntu
+cd ~/ubuntu-scripts/ubuntu
 bash check-setup.sh
 ```
 

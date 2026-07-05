@@ -6,8 +6,8 @@ ENV_FILE_INPUT="${1:-}"
 ENV_FILE="${ENV_FILE:-}"
 DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
 DOCKER_SOURCE_LIST="/etc/apt/sources.list.d/docker.list"
-CADDY_MANAGED_PREFIX="# BEGIN server-scripts remnawave-panel"
-CADDY_MANAGED_SUFFIX="# END server-scripts remnawave-panel"
+CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts remnawave-panel"
+CADDY_MANAGED_SUFFIX="# END ubuntu-scripts remnawave-panel"
 PANEL_COMPOSE_URL="https://raw.githubusercontent.com/remnawave/backend/refs/heads/main/docker-compose-prod.yml"
 PANEL_ENV_URL="https://raw.githubusercontent.com/remnawave/backend/refs/heads/main/.env.sample"
 
@@ -23,7 +23,7 @@ log_line() {
 
 log() { log_line "INFO" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/remnawave-panel && bash setup-remnawave-panel.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/remnawave-panel && bash setup-remnawave-panel.sh"; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
 
 resolve_env_path() {
@@ -692,7 +692,7 @@ main() {
   log "Remnawave Panel is deployed"
   log "Open https://$PANEL_DOMAIN in your browser and create the first super-admin account."
   log "Then create an API token in Remnawave Dashboard -> Settings -> API Tokens."
-  log "After that, run: cd ~/server-scripts/remnawave-panel && bash setup-subscription-page.sh"
+  log "After that, run: cd ~/ubuntu-scripts/remnawave-panel && bash setup-subscription-page.sh"
 }
 
 main "$@"

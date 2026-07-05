@@ -57,21 +57,21 @@ NETDATA_PORT=19999
 
 ## Prepare Env
 
-Run this module from the same root-owned checkout where you downloaded `server-scripts`.
+Run this module from the same root-owned checkout where you downloaded `ubuntu-scripts`.
 
 Clone the repository on the server:
 
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts
 ```
 
 Prepare the Netdata env:
 
 ```bash
-cd ~/server-scripts/netdata
+cd ~/ubuntu-scripts/netdata
 cp env.example .env
 nano .env
 ```
@@ -91,14 +91,14 @@ Change `NETDATA_BASIC_AUTH_PASSWORD` before running setup. The script stops if t
 Install Caddy first:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
 Then run Netdata setup:
 
 ```bash
-cd ~/server-scripts/netdata
+cd ~/ubuntu-scripts/netdata
 bash setup-netdata.sh
 ```
 
@@ -167,7 +167,7 @@ Use that only when you plan to configure Caddy manually.
 ## Verify
 
 ```bash
-cd ~/server-scripts/netdata
+cd ~/ubuntu-scripts/netdata
 bash check-setup.sh
 ```
 

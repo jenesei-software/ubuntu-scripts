@@ -48,10 +48,10 @@ SUBSCRIPTION_PAGE_PORT=3010
 
 ## Prepare Env
 
-Run this module from the same root-owned checkout where you downloaded `server-scripts`.
+Run this module from the same root-owned checkout where you downloaded `ubuntu-scripts`.
 
 ```bash
-cd ~/server-scripts/remnawave-panel
+cd ~/ubuntu-scripts/remnawave-panel
 cp env.example .env
 nano .env
 ```
@@ -76,14 +76,14 @@ The API token is created inside Remnawave after the first admin account exists.
 Install Caddy first:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
 Deploy the panel:
 
 ```bash
-cd ~/server-scripts/remnawave-panel
+cd ~/ubuntu-scripts/remnawave-panel
 bash setup-remnawave-panel.sh
 ```
 
@@ -108,7 +108,7 @@ REMNAWAVE_API_TOKEN=your_token_here
 Deploy the bundled subscription page:
 
 ```bash
-cd ~/server-scripts/remnawave-panel
+cd ~/ubuntu-scripts/remnawave-panel
 bash setup-subscription-page.sh
 ```
 
@@ -142,21 +142,21 @@ Details: [service-users.md](service-users.md)
 The module writes managed Caddy blocks into `/etc/caddy/Caddyfile` by default:
 
 ```caddyfile
-# BEGIN server-scripts remnawave-panel panel.example.com
+# BEGIN ubuntu-scripts remnawave-panel panel.example.com
 panel.example.com {
     encode zstd gzip
     reverse_proxy 127.0.0.1:3000
 }
-# END server-scripts remnawave-panel panel.example.com
+# END ubuntu-scripts remnawave-panel panel.example.com
 ```
 
 ```caddyfile
-# BEGIN server-scripts remnawave-subscription sub.panel.example.com
+# BEGIN ubuntu-scripts remnawave-subscription sub.panel.example.com
 sub.panel.example.com {
     encode zstd gzip
     reverse_proxy 127.0.0.1:3010
 }
-# END server-scripts remnawave-subscription sub.panel.example.com
+# END ubuntu-scripts remnawave-subscription sub.panel.example.com
 ```
 
 Conflict behavior:
@@ -180,7 +180,7 @@ REMNAWAVE_PANEL_CONFIGURE_CADDY=false
 ## Verify
 
 ```bash
-cd ~/server-scripts/remnawave-panel
+cd ~/ubuntu-scripts/remnawave-panel
 bash check-setup.sh
 ```
 

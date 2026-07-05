@@ -24,7 +24,7 @@ web-audits/
 Interactive mode:
 
 ```bash
-cd ~/server-scripts/web-audits
+cd ~/ubuntu-scripts/web-audits
 bash run-web-audit.sh
 ```
 
@@ -35,7 +35,7 @@ Run it as your normal SSH user. The script asks for `sudo` only when it needs to
 Create a local config before changing defaults:
 
 ```bash
-cd ~/server-scripts-web-audits/web-audits
+cd ~/ubuntu-scripts-web-audits/web-audits
 cp env.example .env
 nano .env
 ```
@@ -103,7 +103,7 @@ Important: membership in the `docker` group is effectively root-level access on 
 Non-interactive mode:
 
 ```bash
-cd ~/server-scripts/web-audits
+cd ~/ubuntu-scripts/web-audits
 bash run-web-audit.sh https://example.com all
 ```
 
@@ -128,22 +128,22 @@ You can keep only this module on a server and still use `git pull` by cloning th
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone --filter=blob:none --sparse https://github.com/jenesei-software/ubuntu.git server-scripts-web-audits
-cd server-scripts-web-audits
+git clone --filter=blob:none --sparse https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts-web-audits
+cd ubuntu-scripts-web-audits
 git sparse-checkout set web-audits wiki
 ```
 
 Run:
 
 ```bash
-cd ~/server-scripts-web-audits/web-audits
+cd ~/ubuntu-scripts-web-audits/web-audits
 bash run-web-audit.sh https://example.com all
 ```
 
 Update later:
 
 ```bash
-cd ~/server-scripts-web-audits
+cd ~/ubuntu-scripts-web-audits
 git pull
 ```
 
@@ -209,7 +209,7 @@ web-audits/reports/<site>/<timestamp>.zip
 Build one dashboard from all saved report folders:
 
 ```bash
-cd ~/server-scripts-web-audits/web-audits
+cd ~/ubuntu-scripts-web-audits/web-audits
 bash build-reports-dashboard.sh
 ```
 
@@ -328,38 +328,38 @@ Each run writes `metadata.json` with the target URL, run status, tool settings, 
 Download one archive from Windows PowerShell. Use the SSH user and exact archive path printed in `summary.txt`:
 
 ```powershell
-scp SSH_USER@SERVER_IP:/path/to/server-scripts/web-audits/reports/example.com/20260623-153000.zip C:\Users\YOUR_USER\Downloads\
+scp SSH_USER@SERVER_IP:/path/to/ubuntu-scripts/web-audits/reports/example.com/20260623-153000.zip C:\Users\YOUR_USER\Downloads\
 ```
 
 With a custom SSH port:
 
 ```powershell
-scp -P PORT SSH_USER@SERVER_IP:/path/to/server-scripts/web-audits/reports/example.com/20260623-153000.zip C:\Users\YOUR_USER\Downloads\
+scp -P PORT SSH_USER@SERVER_IP:/path/to/ubuntu-scripts/web-audits/reports/example.com/20260623-153000.zip C:\Users\YOUR_USER\Downloads\
 ```
 
 Download all reports:
 
 ```powershell
-scp -r SSH_USER@SERVER_IP:/path/to/server-scripts/web-audits/reports C:\Users\YOUR_USER\Downloads\web-audits-reports
+scp -r SSH_USER@SERVER_IP:/path/to/ubuntu-scripts/web-audits/reports C:\Users\YOUR_USER\Downloads\web-audits-reports
 ```
 
 Build an aggregate dashboard from the downloaded reports through WSL:
 
 ```bash
-cd /mnt/e/git-library/jenesei-software/server-scripts/web-audits
+cd /mnt/e/git-library/jenesei-software/ubuntu-scripts/web-audits
 bash build-reports-dashboard.sh /mnt/c/Users/YOUR_USER/Downloads/web-audits-reports
 ```
 
 WinSCP path:
 
 ```text
-/path/to/server-scripts/web-audits/reports
+/path/to/ubuntu-scripts/web-audits/reports
 ```
 
 ## Check
 
 ```bash
-cd ~/server-scripts/web-audits
+cd ~/ubuntu-scripts/web-audits
 bash check-setup.sh
 ```
 

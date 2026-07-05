@@ -923,9 +923,9 @@ run_sitespeed() {
     --shm-size "$WEB_AUDIT_SITESPEED_DOCKER_SHM_SIZE" \
     --rm \
     --name "$SITESPEED_CONTAINER_NAME" \
-    --label server-scripts.module=web-audits \
-    --label server-scripts.tool=sitespeed \
-    --label server-scripts.run-id="$RUN_ID" \
+    --label ubuntu-scripts.module=web-audits \
+    --label ubuntu-scripts.tool=sitespeed \
+    --label ubuntu-scripts.run-id="$RUN_ID" \
     -v "$target_dir:/sitespeed.io" \
     -v /etc/localtime:/etc/localtime:ro \
     "$WEB_AUDIT_SITESPEED_IMAGE" \

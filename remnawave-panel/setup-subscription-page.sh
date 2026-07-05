@@ -4,8 +4,8 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 ENV_FILE="${ENV_FILE:-}"
-CADDY_MANAGED_PREFIX="# BEGIN server-scripts remnawave-subscription"
-CADDY_MANAGED_SUFFIX="# END server-scripts remnawave-subscription"
+CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts remnawave-subscription"
+CADDY_MANAGED_SUFFIX="# END ubuntu-scripts remnawave-subscription"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -19,7 +19,7 @@ log_line() {
 
 log() { log_line "INFO" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/remnawave-panel && bash setup-subscription-page.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/remnawave-panel && bash setup-subscription-page.sh"; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
 
 resolve_env_path() {
@@ -93,8 +93,6 @@ load_env() {
   SUBSCRIPTION_PAGE_PORT="${SUBSCRIPTION_PAGE_PORT:-3010}"
   APP_PORT="${APP_PORT:-3000}"
   CUSTOM_SUB_PREFIX="${CUSTOM_SUB_PREFIX:-}"
-  MARZBAN_LEGACY_LINK_ENABLED="${MARZBAN_LEGACY_LINK_ENABLED:-false}"
-  MARZBAN_LEGACY_SECRET_KEY="${MARZBAN_LEGACY_SECRET_KEY:-}"
   CADDY_AUTH_API_TOKEN="${CADDY_AUTH_API_TOKEN:-}"
   REMNAWAVE_PANEL_CONFIGURE_CADDY="${REMNAWAVE_PANEL_CONFIGURE_CADDY:-true}"
   REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN="${REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN:-ask}"
@@ -147,7 +145,6 @@ validate_env() {
   [[ "$SUBSCRIPTION_PAGE_BIND_IP" =~ ^[A-Za-z0-9_.:-]+$ ]] || fail "SUBSCRIPTION_PAGE_BIND_IP contains unsupported characters"
   validate_port SUBSCRIPTION_PAGE_PORT "$SUBSCRIPTION_PAGE_PORT"
   validate_port APP_PORT "$APP_PORT"
-  validate_bool MARZBAN_LEGACY_LINK_ENABLED "$MARZBAN_LEGACY_LINK_ENABLED"
   validate_bool REMNAWAVE_PANEL_CONFIGURE_CADDY "$REMNAWAVE_PANEL_CONFIGURE_CADDY"
   [[ "$REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN" == "ask" || "$REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN" == "true" || "$REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN" == "false" ]] || fail "REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN must be ask, true, or false"
   validate_system_user_env
@@ -408,8 +405,6 @@ APP_PORT=${SUBSCRIPTION_PAGE_PORT}
 REMNAWAVE_PANEL_URL=http://remnawave:${APP_PORT}
 REMNAWAVE_API_TOKEN=${REMNAWAVE_API_TOKEN}
 CUSTOM_SUB_PREFIX=${CUSTOM_SUB_PREFIX}
-MARZBAN_LEGACY_LINK_ENABLED=${MARZBAN_LEGACY_LINK_ENABLED}
-MARZBAN_LEGACY_SECRET_KEY=${MARZBAN_LEGACY_SECRET_KEY}
 CADDY_AUTH_API_TOKEN=${CADDY_AUTH_API_TOKEN}
 EOF
 

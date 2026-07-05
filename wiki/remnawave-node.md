@@ -32,7 +32,7 @@ Optional inbound proxy ports from `PORT_ARRAY_INBOUNDS` are opened in UFW.
 ## Prepare Env
 
 ```bash
-cd ~/server-scripts/remnawave-node
+cd ~/ubuntu-scripts/remnawave-node
 cp env.example .env
 nano .env
 ```
@@ -56,7 +56,7 @@ The setup script rejects placeholder values for `NODE_SECRET`.
 ## Run
 
 ```bash
-cd ~/server-scripts/remnawave-node
+cd ~/ubuntu-scripts/remnawave-node
 bash setup-remnawave-node.sh
 ```
 
@@ -103,7 +103,7 @@ This writes:
 
 Set `DISABLE_IPV6=false` when the node should actively use IPv6. In that mode, setup:
 
-* removes Remnawave and legacy IPv6 disable sysctl files
+* removes the Remnawave IPv6 disable sysctl file
 * writes `/etc/sysctl.d/99-remnawave-node-enable-ipv6.conf`
 * enables IPv6 forwarding
 * enables router advertisements on the detected or configured interface
@@ -119,7 +119,7 @@ IPV6_INTERFACE=eth0
 ## Verify
 
 ```bash
-cd ~/server-scripts/remnawave-node
+cd ~/ubuntu-scripts/remnawave-node
 bash check-setup.sh
 ```
 

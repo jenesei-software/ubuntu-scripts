@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 IPV6_DISABLE_SYSCTL_FILE="/etc/sysctl.d/99-ubuntu-setup-disable-ipv6.conf"
 IPV6_ENABLE_SYSCTL_FILE="/etc/sysctl.d/99-ubuntu-setup-enable-ipv6.conf"
-IPV6_LEGACY_DISABLE_SYSCTL_FILE="/etc/sysctl.d/11-disable-ipv6.conf"
 UFW_DEFAULTS_FILE="/etc/default/ufw"
 
 LOG_COLOR='\033[1;36m'
@@ -24,7 +23,7 @@ err() { log_line "ERROR" "$*"; }
 info() { log_line "INFO" "$*"; }
 section() { echo; log_line "SECTION" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/ubuntu && bash check-setup.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/ubuntu && bash check-setup.sh"; }
 
 resolve_env_path() {
   local candidate="$1"
@@ -203,7 +202,6 @@ check_ipv6() {
     [[ -f /proc/net/if_inet6 ]] && ok "IPv6 kernel support is active" || err "IPv6 kernel support is not active"
     [[ -f "$IPV6_ENABLE_SYSCTL_FILE" ]] && ok "IPv6 enable config is present" || err "IPv6 enable config is missing: $IPV6_ENABLE_SYSCTL_FILE"
     [[ ! -f "$IPV6_DISABLE_SYSCTL_FILE" ]] && ok "IPv6 disable config is absent" || err "IPv6 disable config still exists: $IPV6_DISABLE_SYSCTL_FILE"
-    [[ ! -f "$IPV6_LEGACY_DISABLE_SYSCTL_FILE" ]] && ok "Legacy IPv6 disable config is absent" || err "Legacy IPv6 disable config still exists: $IPV6_LEGACY_DISABLE_SYSCTL_FILE"
 
     if [[ -f "$UFW_DEFAULTS_FILE" ]] && grep -qE '^IPV6=yes$' "$UFW_DEFAULTS_FILE"; then
       ok "UFW IPv6 support is enabled"

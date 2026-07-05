@@ -7,7 +7,6 @@ DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
 DOCKER_SOURCE_LIST="/etc/apt/sources.list.d/docker.list"
 IPV6_DISABLE_SYSCTL_FILE="/etc/sysctl.d/99-remnawave-node-disable-ipv6.conf"
 IPV6_ENABLE_SYSCTL_FILE="/etc/sysctl.d/99-remnawave-node-enable-ipv6.conf"
-IPV6_LEGACY_DISABLE_SYSCTL_FILE="/etc/sysctl.d/11-disable-ipv6.conf"
 UFW_DEFAULTS_FILE="/etc/default/ufw"
 
 LOG_COLOR='\033[1;36m'
@@ -26,7 +25,7 @@ err() { log_line "ERROR" "$*"; }
 info() { log_line "INFO" "$*"; }
 section() { echo; log_line "SECTION" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/remnawave-node && bash check-setup.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/remnawave-node && bash check-setup.sh"; }
 
 resolve_env_path() {
   local candidate="$1"
@@ -270,7 +269,6 @@ check_ipv6() {
   [[ -f /proc/net/if_inet6 ]] && ok "IPv6 kernel support is active" || err "IPv6 kernel support is not active. Check kernel boot parameters such as ipv6.disable=1"
   [[ -f "$IPV6_ENABLE_SYSCTL_FILE" ]] && ok "IPv6 enable config is present: $IPV6_ENABLE_SYSCTL_FILE" || err "IPv6 enable config is missing: $IPV6_ENABLE_SYSCTL_FILE"
   [[ -f "$IPV6_DISABLE_SYSCTL_FILE" ]] && err "IPv6 disable config still exists: $IPV6_DISABLE_SYSCTL_FILE" || ok "No Remnawave IPv6 disable config is present"
-  [[ -f "$IPV6_LEGACY_DISABLE_SYSCTL_FILE" ]] && err "Legacy IPv6 disable config still exists: $IPV6_LEGACY_DISABLE_SYSCTL_FILE" || ok "No legacy IPv6 disable config is present"
 
   if [[ -f "$UFW_DEFAULTS_FILE" ]]; then
     grep -qE '^IPV6=yes$' "$UFW_DEFAULTS_FILE" && ok "UFW IPv6 support is enabled" || err "UFW IPv6 support is not enabled in $UFW_DEFAULTS_FILE"

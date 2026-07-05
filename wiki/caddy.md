@@ -48,8 +48,8 @@ Install git and clone the repository:
 
 ```bash
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts
 ```
 
 For base install, no env file is required. If you want to keep explicit local settings, create `caddy/.env`:
@@ -86,10 +86,10 @@ If `CADDYFILE` is empty or omitted, the default is `/etc/caddy/Caddyfile`.
 
 ## Run
 
-From `~/server-scripts/caddy`:
+From `~/ubuntu-scripts/caddy`:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
@@ -102,7 +102,7 @@ bash check-setup.sh
 Base install command:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
@@ -113,8 +113,8 @@ Fresh server example:
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts/caddy
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts/caddy
 cp env.example .env
 nano .env
 bash setup-caddy.sh
@@ -136,7 +136,7 @@ The module adds UFW rules but does not force-enable UFW. If UFW is already activ
 Run the module check:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash check-setup.sh
 ```
 

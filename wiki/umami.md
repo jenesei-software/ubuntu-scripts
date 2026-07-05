@@ -66,8 +66,8 @@ Install git and clone the repository:
 
 ```bash
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts
 ```
 
 Prepare the Umami env:
@@ -94,14 +94,14 @@ Use only letters, digits, dots, underscores, dashes, and equals signs in `UMAMI_
 Install Caddy first:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
 Then run Umami setup:
 
 ```bash
-cd ~/server-scripts/umami
+cd ~/ubuntu-scripts/umami
 bash setup-umami.sh
 ```
 
@@ -160,7 +160,7 @@ Use that only when you plan to configure Caddy manually.
 ## Verify
 
 ```bash
-cd ~/server-scripts/umami
+cd ~/ubuntu-scripts/umami
 bash check-setup.sh
 ```
 

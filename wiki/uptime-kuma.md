@@ -56,21 +56,21 @@ UPTIME_KUMA_PORT=3001
 
 ## Prepare Env
 
-Run this module from the same root-owned checkout where you downloaded `server-scripts`.
+Run this module from the same root-owned checkout where you downloaded `ubuntu-scripts`.
 
 Clone the repository on the server:
 
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts
 ```
 
 Prepare the Uptime Kuma env:
 
 ```bash
-cd ~/server-scripts/uptime-kuma
+cd ~/ubuntu-scripts/uptime-kuma
 cp env.example .env
 nano .env
 ```
@@ -88,14 +88,14 @@ Uptime Kuma asks you to create its own admin account after the first setup.
 Install Caddy first:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
 Then run Uptime Kuma setup:
 
 ```bash
-cd ~/server-scripts/uptime-kuma
+cd ~/ubuntu-scripts/uptime-kuma
 bash setup-uptime-kuma.sh
 ```
 
@@ -152,7 +152,7 @@ Use that only when you plan to configure Caddy manually.
 ## Verify
 
 ```bash
-cd ~/server-scripts/uptime-kuma
+cd ~/ubuntu-scripts/uptime-kuma
 bash check-setup.sh
 ```
 

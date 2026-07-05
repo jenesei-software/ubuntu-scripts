@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
 DOCKER_SOURCE_LIST="/etc/apt/sources.list.d/docker.list"
-PANEL_CADDY_MANAGED_PREFIX="# BEGIN server-scripts remnawave-panel"
-SUBSCRIPTION_CADDY_MANAGED_PREFIX="# BEGIN server-scripts remnawave-subscription"
+PANEL_CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts remnawave-panel"
+SUBSCRIPTION_CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts remnawave-subscription"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -24,7 +24,7 @@ err() { log_line "ERROR" "$*"; }
 info() { log_line "INFO" "$*"; }
 section() { echo; log_line "SECTION" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/remnawave-panel && bash check-setup.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/remnawave-panel && bash check-setup.sh"; }
 
 resolve_env_path() {
   local candidate="$1"

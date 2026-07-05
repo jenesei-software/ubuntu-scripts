@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
 DOCKER_SOURCE_LIST="/etc/apt/sources.list.d/docker.list"
-CADDY_MANAGED_PREFIX="# BEGIN server-scripts netdata"
-CADDY_MANAGED_SUFFIX="# END server-scripts netdata"
+CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts netdata"
+CADDY_MANAGED_SUFFIX="# END ubuntu-scripts netdata"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -20,7 +20,7 @@ log_line() {
 
 log() { log_line "INFO" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/netdata && bash setup-netdata.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/netdata && bash setup-netdata.sh"; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
 
 resolve_env_path() {

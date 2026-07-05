@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 NODE_KEYRING="/etc/apt/keyrings/nodesource.gpg"
 NODE_SOURCE_LIST="/etc/apt/sources.list.d/nodesource.list"
-CADDY_MANAGED_PREFIX="# BEGIN server-scripts ghost"
-CADDY_MANAGED_SUFFIX="# END server-scripts ghost"
+CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts ghost"
+CADDY_MANAGED_SUFFIX="# END ubuntu-scripts ghost"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -21,7 +21,7 @@ log_line() {
 log() { log_line "INFO" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/ghost && bash setup-ghost.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/ghost && bash setup-ghost.sh"; }
 
 resolve_env_path() {
   local candidate="$1"
@@ -157,7 +157,7 @@ create_or_update_system_user() {
   getent group sudo >/dev/null 2>&1 || groupadd sudo
   usermod -aG sudo "$GHOST_SYSTEM_USER"
 
-  sudoers_file="/etc/sudoers.d/90-server-scripts-ghost-$GHOST_SYSTEM_USER"
+  sudoers_file="/etc/sudoers.d/90-ubuntu-scripts-ghost-$GHOST_SYSTEM_USER"
   log "Allowing passwordless sudo for $GHOST_SYSTEM_USER so Ghost-CLI can configure systemd"
   install -d -m 0755 /etc/sudoers.d
   printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$GHOST_SYSTEM_USER" > "$sudoers_file"

@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 NODE_KEYRING="/etc/apt/keyrings/nodesource.gpg"
 NODE_SOURCE_LIST="/etc/apt/sources.list.d/nodesource.list"
-CADDY_MANAGED_PREFIX="# BEGIN server-scripts ghost"
+CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts ghost"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -23,7 +23,7 @@ err() { log_line "ERROR" "$*"; }
 info() { log_line "INFO" "$*"; }
 section() { echo; log_line "SECTION" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/ghost && bash check-setup.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/ghost && bash check-setup.sh"; }
 
 resolve_env_path() {
   local candidate="$1"
@@ -184,7 +184,7 @@ check_system_user() {
     warn "System user is not in sudo group"
   fi
 
-  if [[ -f "/etc/sudoers.d/90-server-scripts-ghost-$GHOST_SYSTEM_USER" ]]; then
+  if [[ -f "/etc/sudoers.d/90-ubuntu-scripts-ghost-$GHOST_SYSTEM_USER" ]]; then
     ok "Passwordless sudo drop-in exists for Ghost system user"
   else
     warn "Passwordless sudo drop-in is missing for Ghost system user"

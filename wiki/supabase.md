@@ -73,21 +73,21 @@ SUPABASE_POOLER_TRANSACTION_PORT=6543
 
 ## Prepare Env
 
-Run this module from the same root-owned checkout where you downloaded `server-scripts`.
+Run this module from the same root-owned checkout where you downloaded `ubuntu-scripts`.
 
 Clone the repository on the server:
 
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd ~/server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ~/ubuntu-scripts
 ```
 
 Prepare the Supabase env:
 
 ```bash
-cd ~/server-scripts/supabase
+cd ~/ubuntu-scripts/supabase
 cp env.example .env
 nano .env
 ```
@@ -119,14 +119,14 @@ SUPABASE_SITE_URL=https://supabase.example.com
 Install Caddy first:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 ```
 
 Then run Supabase setup:
 
 ```bash
-cd ~/server-scripts/supabase
+cd ~/ubuntu-scripts/supabase
 bash setup-supabase.sh
 ```
 
@@ -190,7 +190,7 @@ Use that only when you plan to configure Caddy manually.
 ## Verify
 
 ```bash
-cd ~/server-scripts/supabase
+cd ~/ubuntu-scripts/supabase
 bash check-setup.sh
 ```
 

@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE_INPUT="${1:-}"
 DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
 DOCKER_SOURCE_LIST="/etc/apt/sources.list.d/docker.list"
-CADDY_MANAGED_PREFIX="# BEGIN server-scripts umami"
-CADDY_MANAGED_SUFFIX="# END server-scripts umami"
+CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts umami"
+CADDY_MANAGED_SUFFIX="# END ubuntu-scripts umami"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -20,7 +20,7 @@ log_line() {
 
 log() { log_line "INFO" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
-require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/server-scripts/umami && bash setup-umami.sh"; }
+require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/umami && bash setup-umami.sh"; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
 
 resolve_env_path() {

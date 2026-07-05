@@ -21,11 +21,11 @@ Download this repository once as `root` and run every module from that same chec
 ```bash
 ssh root@YOUR_SERVER_IP
 apt update && apt install -y git
-git clone https://github.com/jenesei-software/ubuntu.git server-scripts
-cd server-scripts
+git clone https://github.com/jenesei-software/ubuntu-scripts.git ubuntu-scripts
+cd ubuntu-scripts
 ```
 
-Do not copy module scripts into service users' home directories. Service modules can create their own Linux users internally, but the scripts stay in the root-owned `server-scripts` directory.
+Do not copy module scripts into service users' home directories. Service modules can create their own Linux users internally, but the scripts stay in the root-owned `ubuntu-scripts` directory.
 
 Service user model: [wiki/service-users.md](wiki/service-users.md)
 
@@ -98,7 +98,7 @@ Base Ubuntu hardening and SSH setup.
 Use only `ubuntu/.env`:
 
 ```bash
-cd ~/server-scripts/ubuntu
+cd ~/ubuntu-scripts/ubuntu
 cp env.example .env
 nano .env
 bash setup-ubuntu.sh
@@ -114,7 +114,7 @@ Caddy installation and optional reverse proxy configuration.
 Base install without a domain:
 
 ```bash
-cd ~/server-scripts/caddy
+cd ~/ubuntu-scripts/caddy
 bash setup-caddy.sh
 bash check-setup.sh
 ```
@@ -130,7 +130,7 @@ One production Ghost instance behind Caddy.
 Use only `ghost/.env`:
 
 ```bash
-cd ~/server-scripts/ghost
+cd ~/ubuntu-scripts/ghost
 cp env.example .env
 nano .env
 bash setup-ghost.sh
@@ -148,7 +148,7 @@ One Uptime Kuma status monitor behind Caddy.
 Use only `uptime-kuma/.env`:
 
 ```bash
-cd ~/server-scripts/uptime-kuma
+cd ~/ubuntu-scripts/uptime-kuma
 cp env.example .env
 nano .env
 bash setup-uptime-kuma.sh
@@ -166,7 +166,7 @@ One Netdata server dashboard behind Caddy basic auth.
 Use only `netdata/.env`:
 
 ```bash
-cd ~/server-scripts/netdata
+cd ~/ubuntu-scripts/netdata
 cp env.example .env
 nano .env
 bash setup-netdata.sh
@@ -184,7 +184,7 @@ One Remnawave Panel instance and bundled subscription page behind Caddy.
 Use only `remnawave-panel/.env`:
 
 ```bash
-cd ~/server-scripts/remnawave-panel
+cd ~/ubuntu-scripts/remnawave-panel
 cp env.example .env
 nano .env
 bash setup-remnawave-panel.sh
@@ -193,7 +193,7 @@ bash setup-remnawave-panel.sh
 After creating the first Remnawave admin and API token, run:
 
 ```bash
-cd ~/server-scripts/remnawave-panel
+cd ~/ubuntu-scripts/remnawave-panel
 bash setup-subscription-page.sh
 bash check-setup.sh
 ```
@@ -207,7 +207,7 @@ One Remnawave Node with Docker and direct node ports.
 Use only `remnawave-node/.env`:
 
 ```bash
-cd ~/server-scripts/remnawave-node
+cd ~/ubuntu-scripts/remnawave-node
 cp env.example .env
 nano .env
 bash setup-remnawave-node.sh
@@ -225,7 +225,7 @@ One self-hosted Supabase project behind Caddy.
 Use only `supabase/.env`:
 
 ```bash
-cd ~/server-scripts/supabase
+cd ~/ubuntu-scripts/supabase
 cp env.example .env
 nano .env
 bash setup-supabase.sh
@@ -243,7 +243,7 @@ One Umami Analytics instance behind Caddy.
 Use only `umami/.env`:
 
 ```bash
-cd ~/server-scripts/umami
+cd ~/ubuntu-scripts/umami
 cp env.example .env
 nano .env
 bash setup-umami.sh
@@ -259,7 +259,7 @@ One-off website audits with Lighthouse CI and sitespeed.io.
 Use only `web-audits/.env`; the env file is optional:
 
 ```bash
-cd ~/server-scripts/web-audits
+cd ~/ubuntu-scripts/web-audits
 cp env.example .env
 nano .env
 bash run-web-audit.sh
