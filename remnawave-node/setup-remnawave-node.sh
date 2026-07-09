@@ -281,7 +281,7 @@ install_docker_if_missing() {
 }
 
 create_or_update_service_user() {
-  service_user_enabled || return
+  service_user_enabled || return 0
   require_cmd runuser
 
   local ssh_dir auth_keys
@@ -530,8 +530,8 @@ ensure_certificate() {
 }
 
 chown_node_dir_if_needed() {
-  service_user_enabled || return
-  [[ -d "$COMPOSE_DIR" ]] || return
+  service_user_enabled || return 0
+  [[ -d "$COMPOSE_DIR" ]] || return 0
   chown -R "$REMNAWAVE_NODE_SYSTEM_USER:" "$COMPOSE_DIR"
 }
 

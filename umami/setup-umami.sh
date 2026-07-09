@@ -259,14 +259,14 @@ confirm_caddy_overwrite() {
 }
 
 preflight_caddy() {
-  [[ "$UMAMI_CONFIGURE_CADDY" == "true" ]] || return
+  [[ "$UMAMI_CONFIGURE_CADDY" == "true" ]] || return 0
 
   require_cmd caddy
   local host block begin_marker
   host="$(umami_host)"
   begin_marker="$CADDY_MANAGED_PREFIX $host"
 
-  [[ -f "$CADDYFILE" ]] || return
+  [[ -f "$CADDYFILE" ]] || return 0
 
   if grep -Fq "$begin_marker" "$CADDYFILE"; then
     log "Managed Caddy block already exists for $host and will be updated"
@@ -330,7 +330,7 @@ install_docker() {
 }
 
 create_or_update_service_user() {
-  service_user_enabled || return
+  service_user_enabled || return 0
   require_cmd runuser
 
   local ssh_dir auth_keys
@@ -521,7 +521,7 @@ configure_caddy() {
     log "Skipping Caddy configuration because UMAMI_CONFIGURE_CADDY=false"
     return
   }
-  [[ "${UMAMI_CADDY_ALREADY_CONFIGURED:-false}" != "true" ]] || return
+  [[ "${UMAMI_CADDY_ALREADY_CONFIGURED:-false}" != "true" ]] || return 0
 
   local host
   local backup_file=""

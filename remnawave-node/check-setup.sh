@@ -136,6 +136,21 @@ service_user_enabled() {
   [[ -n "${REMNAWAVE_NODE_SYSTEM_USER:-}" ]]
 }
 
+service_user_home() {
+  local home
+  home="$(getent passwd "$REMNAWAVE_NODE_SYSTEM_USER" | cut -d: -f6)"
+  [[ -n "$home" ]] || home="/home/$REMNAWAVE_NODE_SYSTEM_USER"
+  printf '%s\n' "$home"
+}
+
+run_in_node_dir() {
+  if service_user_enabled; then
+    runuser -u "$REMNAWAVE_NODE_SYSTEM_USER" -- env HOME="$(service_user_home)" bash -c 'cd "$1" && shift && "$@"' _ "$COMPOSE_DIR" "$@"
+  else
+    (cd "$COMPOSE_DIR" && "$@")
+  fi
+}
+
 check_service_user() {
   section "Service user"
   if ! service_user_enabled; then
@@ -153,7 +168,7 @@ check_service_user() {
   id -nG "$REMNAWAVE_NODE_SYSTEM_USER" | tr ' ' '\n' | grep -qx docker && ok "Service user is in docker group" || err "Service user is not in docker group"
   [[ -d "$COMPOSE_DIR" ]] && [[ "$(stat -c '%U' "$COMPOSE_DIR")" == "$REMNAWAVE_NODE_SYSTEM_USER" ]] && ok "Install directory is owned by $REMNAWAVE_NODE_SYSTEM_USER" || warn "Install directory is not owned by $REMNAWAVE_NODE_SYSTEM_USER"
 
-  if runuser -u "$REMNAWAVE_NODE_SYSTEM_USER" -- docker info >/dev/null 2>&1; then
+  if runuser -u "$REMNAWAVE_NODE_SYSTEM_USER" -- env HOME="$(service_user_home)" docker info >/dev/null 2>&1; then
     ok "Service user can access Docker"
   else
     err "Service user cannot access Docker"
@@ -335,18 +350,36 @@ check_certs() {
 
 check_docker_compose() {
   section "Docker / Remnawave Node"
+  local compose_user
+
   [[ -d "$COMPOSE_DIR" ]] && ok "Install directory exists: $COMPOSE_DIR" || err "Install directory is missing: $COMPOSE_DIR"
   [[ -f "$COMPOSE_FILE" ]] && ok "Compose file exists: $COMPOSE_FILE" || { err "Compose file is missing: $COMPOSE_FILE"; return; }
 
-  if (cd "$COMPOSE_DIR" && docker compose config >/dev/null 2>&1); then
-    ok "Compose file is valid"
+  if service_user_enabled; then
+    compose_user="$REMNAWAVE_NODE_SYSTEM_USER"
   else
-    err "Compose file validation failed"
-    (cd "$COMPOSE_DIR" && docker compose config) || true
+    compose_user="root"
+  fi
+
+  if run_in_node_dir docker compose config >/dev/null 2>&1; then
+    ok "Compose file is valid for Docker Compose user: $compose_user"
+  else
+    err "Compose file validation failed for Docker Compose user: $compose_user"
+    run_in_node_dir docker compose config || true
   fi
 
   docker ps --format '{{.Names}}' | grep -qx remnanode && ok "Container remnanode is running" || err "Container remnanode is not running"
-  (cd "$COMPOSE_DIR" && docker compose ps) || warn "Could not run docker compose ps"
+  if run_in_node_dir docker compose ps --services 2>/dev/null | grep -qx remnanode; then
+    ok "Docker Compose sees remnanode as user: $compose_user"
+  else
+    warn "Docker Compose does not list remnanode as user: $compose_user"
+  fi
+
+  if run_in_node_dir docker compose ps; then
+    ok "Docker Compose ps works as user: $compose_user"
+  else
+    warn "Could not run docker compose ps as user: $compose_user"
+  fi
 }
 
 main() {

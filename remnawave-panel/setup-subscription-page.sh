@@ -255,12 +255,12 @@ confirm_caddy_overwrite() {
 }
 
 preflight_caddy() {
-  [[ "$REMNAWAVE_PANEL_CONFIGURE_CADDY" == "true" ]] || return
+  [[ "$REMNAWAVE_PANEL_CONFIGURE_CADDY" == "true" ]] || return 0
   require_cmd caddy
 
   local block begin_marker
   begin_marker="$CADDY_MANAGED_PREFIX $SUBSCRIPTION_PAGE_DOMAIN"
-  [[ -f "$CADDYFILE" ]] || return
+  [[ -f "$CADDYFILE" ]] || return 0
 
   if grep -Fq "$begin_marker" "$CADDYFILE"; then
     log "Managed Caddy block already exists for $SUBSCRIPTION_PAGE_DOMAIN and will be updated"
@@ -286,7 +286,7 @@ preflight_caddy() {
 }
 
 create_or_update_service_user() {
-  service_user_enabled || return
+  service_user_enabled || return 0
   require_cmd runuser
 
   local ssh_dir auth_keys
@@ -331,8 +331,8 @@ create_or_update_service_user() {
 }
 
 chown_panel_dir_if_needed() {
-  service_user_enabled || return
-  [[ -d "$PANEL_DIR" ]] || return
+  service_user_enabled || return 0
+  [[ -d "$PANEL_DIR" ]] || return 0
   chown -R "$REMNAWAVE_PANEL_SYSTEM_USER:" "$PANEL_DIR"
 }
 
@@ -546,7 +546,7 @@ configure_caddy() {
     log "Skipping Caddy configuration because REMNAWAVE_PANEL_CONFIGURE_CADDY=false"
     return
   }
-  [[ "${REMNAWAVE_SUBSCRIPTION_CADDY_ALREADY_CONFIGURED:-false}" != "true" ]] || return
+  [[ "${REMNAWAVE_SUBSCRIPTION_CADDY_ALREADY_CONFIGURED:-false}" != "true" ]] || return 0
 
   local backup_file=""
   log "Configuring Caddy for $SUBSCRIPTION_PAGE_DOMAIN -> ${SUBSCRIPTION_PAGE_BIND_IP}:${SUBSCRIPTION_PAGE_PORT}"

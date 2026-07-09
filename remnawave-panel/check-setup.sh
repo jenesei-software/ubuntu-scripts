@@ -80,7 +80,7 @@ reset_env_vars() {
 
 load_env_file() {
   local file="$1"
-  [[ -f "$file" ]] || return
+  [[ -f "$file" ]] || return 0
   set -a
   # shellcheck disable=SC1090
   source "$file"
