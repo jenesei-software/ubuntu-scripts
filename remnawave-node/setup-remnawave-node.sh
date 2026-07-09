@@ -25,6 +25,14 @@ fail() { log_line "ERROR" "$*" >&2; exit 1; }
 require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/remnawave-node && bash setup-remnawave-node.sh"; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
 
+on_error() {
+  local exit_code=$?
+  local line_no="${BASH_LINENO[0]:-${LINENO}}"
+  local command="${BASH_COMMAND:-unknown}"
+  log_line "ERROR" "Setup failed at line $line_no: $command (exit $exit_code)" >&2
+}
+trap on_error ERR
+
 resolve_env_path() {
   local candidate="$1"
   local candidate_dir
@@ -206,10 +214,37 @@ install_base_packages() {
     install ca-certificates curl gnupg iproute2 openssl socat ufw
 }
 
+ensure_docker_running() {
+  local attempt
+
+  require_cmd systemctl
+
+  log "Ensuring Docker service is enabled and running"
+  if ! systemctl enable docker; then
+    log "Could not enable Docker service for boot; continuing with runtime readiness check"
+  fi
+
+  if ! systemctl start docker; then
+    systemctl status docker --no-pager || true
+    fail "Failed to start Docker service"
+  fi
+
+  for attempt in {1..30}; do
+    if docker info >/dev/null 2>&1; then
+      log "Docker daemon is ready"
+      return
+    fi
+    sleep 1
+  done
+
+  systemctl status docker --no-pager || true
+  fail "Docker daemon did not become ready after service start"
+}
+
 install_docker_if_missing() {
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     log "Docker and Docker Compose are already installed"
-    systemctl enable --now docker
+    ensure_docker_running
     return
   fi
 
@@ -241,7 +276,8 @@ install_docker_if_missing() {
     -o Dpkg::Options::="--force-confold" \
     install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-  systemctl enable --now docker
+  ensure_docker_running
+  docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is not available after installation"
 }
 
 create_or_update_service_user() {
