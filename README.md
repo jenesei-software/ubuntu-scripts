@@ -38,6 +38,15 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   |-- env.example
 |   |-- check-setup.sh
 |   `-- setup-caddy.sh
+|-- coolify/
+|   |-- env.example
+|   |-- check-setup.sh
+|   `-- setup-coolify.sh
+|-- authentik/
+|   |-- env.example
+|   |-- check-setup.sh
+|   |-- setup-authentik.sh
+|   `-- setup-youtrack-oidc.sh
 |-- ghost/
 |   |-- env.example
 |   |-- check-setup.sh
@@ -63,6 +72,10 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   |-- env.example
 |   |-- check-setup.sh
 |   `-- setup-uptime-kuma.sh
+|-- youtrack/
+|   |-- env.example
+|   |-- check-setup.sh
+|   `-- setup-youtrack.sh
 |-- umami/
 |   |-- env.example
 |   |-- check-setup.sh
@@ -77,6 +90,8 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   `-- check-setup.sh
 `-- wiki/
     |-- caddy.md
+    |-- coolify.md
+    |-- authentik.md
     |-- ghost.md
     |-- netdata.md
     |-- remnawave-node.md
@@ -84,6 +99,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
     |-- service-users.md
     |-- supabase.md
     |-- uptime-kuma.md
+    |-- youtrack.md
     |-- umami.md
     |-- web-audits.md
     `-- ubuntu.md
@@ -122,6 +138,61 @@ bash check-setup.sh
 If `caddy/.env` is missing, or if `CADDY_DOMAIN` and `CADDY_UPSTREAM` are empty, the script installs and starts Caddy without replacing the current Caddyfile. Service modules can add their own domains later.
 
 Documentation: [wiki/caddy.md](wiki/caddy.md)
+
+### `coolify/`
+
+One self-hosted Coolify control plane using the official Coolify installer.
+
+Use a fresh, dedicated Ubuntu 24.04 server. Coolify owns Docker configuration, `/data/coolify`, and the public proxy ports, so do not run the `caddy/` module first on the same server.
+
+```bash
+cd ~/ubuntu-scripts/coolify
+cp env.example .env
+nano .env
+bash setup-coolify.sh
+bash check-setup.sh
+```
+
+Immediately create the first administrator if predefined credentials were not set in `coolify/.env`.
+
+Documentation: [wiki/coolify.md](wiki/coolify.md)
+
+### `youtrack/`
+
+One YouTrack Server instance behind the existing system Caddy.
+
+```bash
+cd ~/ubuntu-scripts/youtrack
+cp env.example .env
+nano .env
+bash setup-youtrack.sh
+bash check-setup.sh
+```
+
+On a new installation, finish the JetBrains setup wizard and use the public HTTPS URL as the YouTrack Base URL.
+
+Documentation: [wiki/youtrack.md](wiki/youtrack.md)
+
+### `authentik/`
+
+One Authentik identity provider behind the existing system Caddy, with optional native OIDC integration for YouTrack 2026.1+.
+
+```bash
+cd ~/ubuntu-scripts/authentik
+cp env.example .env
+nano .env
+bash setup-authentik.sh
+bash check-setup.sh
+```
+
+After both services are initialized, prepare the YouTrack OIDC provider:
+
+```bash
+cd ~/ubuntu-scripts/authentik
+bash setup-youtrack-oidc.sh
+```
+
+Documentation: [wiki/authentik.md](wiki/authentik.md)
 
 ### `ghost/`
 
@@ -280,11 +351,23 @@ The Caddy module opens:
 * `80/tcp`
 * `443/tcp`
 
+The Coolify module opens:
+
+* `80/tcp`
+* `443/tcp`
+* `8000/tcp`
+* `6001/tcp`
+* `6002/tcp`
+
+Coolify publishes ports through Docker. Docker NAT rules can bypass ordinary UFW filtering, so use the provider firewall to control public exposure. After configuring a Coolify domain and integrated proxy, direct access to `8000`, `6001`, and `6002` can normally be closed at the provider firewall.
+
 The Ghost module does not open public ports directly. Ghost listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it.
 
 The Umami module does not open public ports directly. Umami listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it.
 
 The Uptime Kuma module does not open public ports directly. Uptime Kuma listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it.
+
+The YouTrack and Authentik modules do not open public application ports directly. Their HTTP ports bind to loopback, and the existing system Caddy terminates public HTTPS. Authentik's internal HTTPS port also remains loopback-only.
 
 The Netdata module does not open public ports directly. Netdata listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it. Netdata is protected with Caddy basic auth by default.
 
@@ -298,6 +381,7 @@ The Caddy module installs UFW if needed and adds the HTTP/HTTPS rules. It does n
 
 ## Rules For New Modules
 
+* Follow the production and verification requirements in [AGENTS.md](AGENTS.md).
 * Put each install target in its own folder.
 * Put module-specific variables in that folder's `env.example`.
 * Make scripts default to that folder's `.env`.
