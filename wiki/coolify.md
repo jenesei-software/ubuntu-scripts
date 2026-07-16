@@ -42,6 +42,12 @@ Docker installed through Snap is not supported. The official installer installs 
 
 ## Install
 
+The recommended order on a new server is:
+
+1. Run the repository's `ubuntu/` setup.
+2. Run `coolify/setup-coolify.sh` directly afterward.
+3. Do not run `caddy/setup-caddy.sh` on this server. Coolify installs and manages its own integrated proxy for domains and HTTPS.
+
 From the root-owned repository checkout:
 
 ```bash
@@ -77,25 +83,37 @@ The official installer writes stable generated secrets to `/data/coolify/source/
 
 ## First Login
 
-Open:
+After the installer finishes, open the Coolify web interface in a browser on your local computer. Replace `SERVER_IP` with the public IP address used to connect to the server:
 
 ```text
 http://SERVER_IP:8000
 ```
 
+For example, if the SSH command is `ssh root@203.0.113.10`, open:
+
+```text
+http://203.0.113.10:8000
+```
+
+Port `8000` is the temporary direct address for initial setup. It is not the final public address for the Coolify panel.
+
 If the administrator variables were left empty, create the first administrator immediately. Until the first account is claimed, anyone who can reach the registration page may gain control of the server.
 
-After login, configure the Coolify instance domain and integrated proxy, verify HTTPS, and then close direct public access to `8000`, `6001`, and `6002` in the provider firewall if they are no longer needed. Keep `80/443` open for application traffic and certificate issuance.
+Before or during initial setup, create a DNS record such as `coolify.example.com` pointing to the server's public IP. After login, configure `https://coolify.example.com` as the Coolify instance domain and enable its integrated proxy. Once HTTPS works, use that domain for future logins and close direct public access to `8000`, `6001`, and `6002` in the provider firewall if they are no longer needed. Keep `80/443` open for application traffic and certificate issuance.
 
 ## Firewall
 
-The module can add idempotent UFW allow rules for:
+With the default `COOLIFY_CONFIGURE_UFW=true`, the setup script adds idempotent UFW allow rules for:
 
 - `80/tcp`: HTTP and certificate validation
 - `443/tcp`: HTTPS application traffic
 - `8000/tcp`: initial dashboard access
 - `6001/tcp`: realtime communications
 - `6002/tcp`: terminal access
+
+The script does not enable UFW. The base `ubuntu/` module owns initial UFW enablement and SSH safety. If `ubuntu/` has already enabled UFW, the added Coolify rules take effect immediately.
+
+The script also cannot change a hosting provider or cloud firewall. Allow the same required ports there during initial setup. After the Coolify domain and HTTPS work, remove public provider-firewall access to `8000`, `6001`, and `6002` when those direct ports are no longer required.
 
 Docker publishes ports through iptables/NAT and can bypass normal UFW filtering. Use the cloud/provider firewall as the primary public exposure control. UFW rules alone are not proof that a Docker port is closed.
 

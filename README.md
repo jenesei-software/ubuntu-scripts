@@ -143,7 +143,7 @@ Documentation: [wiki/caddy.md](wiki/caddy.md)
 
 One self-hosted Coolify control plane using the official Coolify installer.
 
-Use a fresh, dedicated Ubuntu 24.04 server. Coolify owns Docker configuration, `/data/coolify`, and the public proxy ports, so do not run the `caddy/` module first on the same server.
+Use a fresh, dedicated Ubuntu 24.04 server. The recommended installation order is `ubuntu/` followed directly by `coolify/`. Do not install the repository's `caddy/` module on the same server: Coolify manages its own proxy and needs public ports `80/443`.
 
 ```bash
 cd ~/ubuntu-scripts/coolify
@@ -153,7 +153,9 @@ bash setup-coolify.sh
 bash check-setup.sh
 ```
 
-Immediately create the first administrator if predefined credentials were not set in `coolify/.env`.
+After installation, replace `SERVER_IP` with the server's public IP and open `http://SERVER_IP:8000` in a web browser for the initial login. For example, if SSH uses `root@203.0.113.10`, open `http://203.0.113.10:8000`. Configure `https://coolify.example.com` as the instance domain in Coolify; after HTTPS works, use the domain instead of port `8000`.
+
+Immediately create the first administrator if predefined credentials were not set in `coolify/.env`. With the default `COOLIFY_CONFIGURE_UFW=true`, the setup adds UFW allow rules for `80`, `443`, `8000`, `6001`, and `6002`, but it does not enable UFW or change the hosting provider's firewall.
 
 Documentation: [wiki/coolify.md](wiki/coolify.md)
 
