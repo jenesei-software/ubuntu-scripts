@@ -78,6 +78,13 @@ strip_protocol() {
   printf '%s\n' "$value"
 }
 
+is_example_domain() {
+  case "$1" in
+    panel.example.com|sub.panel.example.com|example.com|*.example.com) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 load_env() {
   resolve_env_file
   [[ -f "$ENV_FILE" ]] || fail "Environment file not found: $ENV_FILE"
@@ -151,6 +158,10 @@ validate_system_user_env() {
 }
 
 validate_env() {
+  is_example_domain "$PANEL_DOMAIN" && fail "PANEL_DOMAIN still contains an example hostname: $PANEL_DOMAIN"
+  if [[ -n "$SUBSCRIPTION_PAGE_DOMAIN" ]]; then
+    is_example_domain "$SUBSCRIPTION_PAGE_DOMAIN" && fail "SUBSCRIPTION_PAGE_DOMAIN still contains an example hostname: $SUBSCRIPTION_PAGE_DOMAIN"
+  fi
   [[ "$PANEL_DOMAIN" =~ ^[^/]+$ ]] || fail "PANEL_DOMAIN must be a domain without path"
   [[ "$REMNAWAVE_PANEL_BIND_IP" =~ ^[A-Za-z0-9_.:-]+$ ]] || fail "REMNAWAVE_PANEL_BIND_IP contains unsupported characters"
   validate_port REMNAWAVE_PANEL_PORT "$REMNAWAVE_PANEL_PORT"
@@ -239,6 +250,14 @@ caddy_block_points_to_panel() {
   return 1
 }
 
+caddy_block_is_managed_by_other_service() {
+  local block="$1"
+
+  grep -Fq "# BEGIN ubuntu-scripts" <<< "$block" || return 1
+  grep -Fq "$CADDY_MANAGED_PREFIX" <<< "$block" && return 1
+  return 0
+}
+
 confirm_caddy_overwrite() {
   local host="$1"
   local answer
@@ -285,6 +304,26 @@ preflight_caddy() {
     log "Caddy already routes $PANEL_DOMAIN to Remnawave Panel upstream ${REMNAWAVE_PANEL_BIND_IP}:${REMNAWAVE_PANEL_PORT}; keeping existing block"
     REMNAWAVE_PANEL_CADDY_ALREADY_CONFIGURED=true
     return
+  fi
+
+  if caddy_block_is_managed_by_other_service "$block"; then
+    case "$REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN" in
+      true)
+        log "Caddy block for $PANEL_DOMAIN is managed by another ubuntu-scripts module; replacing it because REMNAWAVE_PANEL_CADDY_OVERWRITE_DOMAIN=true"
+        REMNAWAVE_PANEL_CADDY_REPLACE_EXISTING_BLOCK=true
+        return
+        ;;
+      ask)
+        if confirm_caddy_overwrite "$PANEL_DOMAIN"; then
+          log "Caddy block for $PANEL_DOMAIN will be replaced with Remnawave Panel reverse proxy"
+          REMNAWAVE_PANEL_CADDY_REPLACE_EXISTING_BLOCK=true
+          return
+        fi
+        ;;
+      false)
+        ;;
+    esac
+    fail "Caddyfile already contains a block for $PANEL_DOMAIN managed by another ubuntu-scripts module. Setup stopped without replacing it."
   fi
 
   if confirm_caddy_overwrite "$PANEL_DOMAIN"; then

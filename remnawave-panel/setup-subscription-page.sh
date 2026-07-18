@@ -77,6 +77,13 @@ strip_protocol() {
   printf '%s\n' "$value"
 }
 
+is_example_domain() {
+  case "$1" in
+    panel.example.com|sub.panel.example.com|example.com|*.example.com) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 load_env() {
   resolve_env_file
   [[ -f "$ENV_FILE" ]] || fail "Environment file not found: $ENV_FILE"
@@ -139,6 +146,8 @@ validate_system_user_env() {
 }
 
 validate_env() {
+  is_example_domain "$PANEL_DOMAIN" && fail "PANEL_DOMAIN still contains an example hostname: $PANEL_DOMAIN"
+  is_example_domain "$SUBSCRIPTION_PAGE_DOMAIN" && fail "SUBSCRIPTION_PAGE_DOMAIN still contains an example hostname: $SUBSCRIPTION_PAGE_DOMAIN"
   [[ "$PANEL_DOMAIN" =~ ^[^/]+$ ]] || fail "PANEL_DOMAIN must be a domain without path"
   [[ "$SUBSCRIPTION_PAGE_DOMAIN" =~ ^[^/]+$ ]] || fail "SUBSCRIPTION_PAGE_DOMAIN must be a domain without path"
   [[ "$PANEL_DOMAIN" != "$SUBSCRIPTION_PAGE_DOMAIN" ]] || fail "SUBSCRIPTION_PAGE_DOMAIN must be different from PANEL_DOMAIN"
@@ -541,6 +550,29 @@ remove_caddy_block_for_host() {
   rm -f "$tmp_file"
 }
 
+remove_stale_managed_caddy_blocks() {
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  awk -v prefix="$CADDY_MANAGED_PREFIX " -v suffix="$CADDY_MANAGED_SUFFIX " -v current="$SUBSCRIPTION_PAGE_DOMAIN" '
+    index($0, prefix) == 1 {
+      host = substr($0, length(prefix) + 1)
+      if (host != current) {
+        skip = 1
+        next
+      }
+    }
+    skip && index($0, suffix) == 1 {
+      skip = 0
+      next
+    }
+    !skip { print }
+  ' "$CADDYFILE" > "$tmp_file"
+
+  cp "$tmp_file" "$CADDYFILE"
+  rm -f "$tmp_file"
+}
+
 configure_caddy() {
   [[ "$REMNAWAVE_PANEL_CONFIGURE_CADDY" == "true" ]] || {
     log "Skipping Caddy configuration because REMNAWAVE_PANEL_CONFIGURE_CADDY=false"
@@ -558,6 +590,10 @@ configure_caddy() {
   else
     touch "$CADDYFILE"
   fi
+
+  # A previous run may have installed a managed block for an old or example
+  # hostname. Keep only the block matching the currently configured domain.
+  remove_stale_managed_caddy_blocks
 
   if grep -Fq "$CADDY_MANAGED_PREFIX $SUBSCRIPTION_PAGE_DOMAIN" "$CADDYFILE"; then
     replace_managed_caddy_block
