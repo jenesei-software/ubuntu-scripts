@@ -109,7 +109,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 
 ### `ubuntu/`
 
-Base Ubuntu hardening and SSH setup.
+Base Ubuntu hardening with key-only SSH authentication. The setup uses an early managed OpenSSH drop-in, and the check validates effective settings with `sshd -T`.
 
 Use only `ubuntu/.env`:
 

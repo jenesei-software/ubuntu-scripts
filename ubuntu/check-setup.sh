@@ -6,6 +6,9 @@ ENV_FILE_INPUT="${1:-}"
 IPV6_DISABLE_SYSCTL_FILE="/etc/sysctl.d/99-ubuntu-setup-disable-ipv6.conf"
 IPV6_ENABLE_SYSCTL_FILE="/etc/sysctl.d/99-ubuntu-setup-enable-ipv6.conf"
 UFW_DEFAULTS_FILE="/etc/default/ufw"
+SSHD_DROPIN_FILE="/etc/ssh/sshd_config.d/00-ubuntu-setup.conf"
+SSHD_LEGACY_DROPIN_FILE="/etc/ssh/sshd_config.d/99-ubuntu-setup.conf"
+ERROR_COUNT=0
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -19,7 +22,10 @@ log_line() {
 
 ok() { log_line "OK" "$*"; }
 warn() { log_line "WARN" "$*"; }
-err() { log_line "ERROR" "$*"; }
+err() {
+  log_line "ERROR" "$*"
+  ((ERROR_COUNT += 1))
+}
 info() { log_line "INFO" "$*"; }
 section() { echo; log_line "SECTION" "$*"; }
 fail() { log_line "ERROR" "$*" >&2; exit 1; }
@@ -144,6 +150,7 @@ check_sysctl_value() {
 check_system() {
   section "Base system"
   check_cmd ssh
+  check_cmd sshd
   check_cmd ufw
   check_cmd fail2ban-client
   check_cmd ip
@@ -214,7 +221,25 @@ check_ipv6() {
 check_ssh() {
   section "SSH"
   local sshd_config="/etc/ssh/sshd_config"
+  local effective_config
+  local key expected actual
   [[ -f "$sshd_config" ]] || { err "File not found: $sshd_config"; return; }
+
+  if ! command -v sshd >/dev/null 2>&1; then
+    err "Cannot inspect effective SSH settings because sshd is not available"
+    return
+  fi
+
+  if ! sshd -t; then
+    err "SSH configuration syntax validation failed"
+    return
+  fi
+  ok "SSH configuration syntax is valid"
+
+  if ! effective_config="$(sshd -T 2>&1)"; then
+    err "Could not read the effective SSH configuration"
+    return
+  fi
 
   if [[ -n "${PORT_SSH:-}" ]] && ss -tln "( sport = :$PORT_SSH )" | grep -q LISTEN; then
     ok "SSHD is listening on PORT_SSH: $PORT_SSH"
@@ -222,8 +247,28 @@ check_ssh() {
     warn "Could not confirm SSH listener from PORT_SSH"
   fi
 
-  grep -Eq '^PermitRootLogin no$' "$sshd_config" && ok "Root login is disabled" || warn "PermitRootLogin no not found"
-  grep -Eq '^PasswordAuthentication no$' "$sshd_config" && ok "Password authentication is disabled" || warn "PasswordAuthentication no not found"
+  while read -r key expected; do
+    actual="$(awk -v key="$key" 'tolower($1) == key { print tolower($2); exit }' <<< "$effective_config")"
+    if [[ "$actual" == "$expected" ]]; then
+      ok "Effective SSH setting: $key=$expected"
+    else
+      err "Effective SSH setting $key expected $expected, got ${actual:-missing}"
+    fi
+  done <<EOF
+permitrootlogin no
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+permitemptypasswords no
+EOF
+
+  if [[ -n "${PORT_SSH:-}" ]]; then
+    actual="$(awk 'tolower($1) == "port" { print $2; exit }' <<< "$effective_config")"
+    [[ "$actual" == "$PORT_SSH" ]] && ok "Effective SSH port: $PORT_SSH" || err "Effective SSH port expected $PORT_SSH, got ${actual:-missing}"
+  fi
+
+  [[ -f "$SSHD_DROPIN_FILE" ]] && ok "Managed SSH drop-in is present: $SSHD_DROPIN_FILE" || err "Managed SSH drop-in is missing: $SSHD_DROPIN_FILE"
+  [[ ! -f "$SSHD_LEGACY_DROPIN_FILE" ]] && ok "Obsolete SSH drop-in is absent" || warn "Obsolete SSH drop-in is still present: $SSHD_LEGACY_DROPIN_FILE"
 }
 
 check_ufw() {
@@ -252,6 +297,13 @@ main() {
   check_ipv6
   check_ssh
   check_ufw
+
+  section "Summary"
+  if (( ERROR_COUNT > 0 )); then
+    log_line "ERROR" "$ERROR_COUNT required check(s) failed"
+    return 1
+  fi
+  ok "All required checks passed"
 }
 
 main "$@"

@@ -6,6 +6,9 @@ ENV_FILE_INPUT="${1:-}"
 IPV6_DISABLE_SYSCTL_FILE="/etc/sysctl.d/99-ubuntu-setup-disable-ipv6.conf"
 IPV6_ENABLE_SYSCTL_FILE="/etc/sysctl.d/99-ubuntu-setup-enable-ipv6.conf"
 UFW_DEFAULTS_FILE="/etc/default/ufw"
+SSHD_DROPIN_DIR="/etc/ssh/sshd_config.d"
+SSHD_DROPIN_FILE="$SSHD_DROPIN_DIR/00-ubuntu-setup.conf"
+SSHD_LEGACY_DROPIN_FILE="$SSHD_DROPIN_DIR/99-ubuntu-setup.conf"
 
 LOG_COLOR='\033[1;36m'
 LOG_RESET='\033[0m'
@@ -319,38 +322,80 @@ setup_ssh_key() {
   fi
 }
 
+verify_sshd_effective_config() {
+  local effective_config
+  local key expected actual
+  local invalid=0
+
+  if ! effective_config="$(sshd -T 2>&1)"; then
+    log_line "ERROR" "Could not read the effective SSH configuration"
+    return 1
+  fi
+
+  while read -r key expected; do
+    actual="$(awk -v key="$key" 'tolower($1) == key { print tolower($2); exit }' <<< "$effective_config")"
+    if [[ "$actual" == "$expected" ]]; then
+      log "Verified effective SSH setting: $key=$expected"
+    else
+      log_line "ERROR" "Effective SSH setting $key must be $expected, got ${actual:-missing}"
+      invalid=1
+    fi
+  done <<EOF
+port $PORT_SSH
+permitrootlogin no
+pubkeyauthentication yes
+passwordauthentication no
+kbdinteractiveauthentication no
+permitemptypasswords no
+EOF
+
+  (( invalid == 0 ))
+}
+
 configure_ssh() {
-  local sshd_config="/etc/ssh/sshd_config"
-  local sshd_dropin_dir="/etc/ssh/sshd_config.d"
-  local sshd_dropin_file="$sshd_dropin_dir/99-ubuntu-setup.conf"
+  local temp_file
+  local backup_file=""
+  local changed=false
 
-  cp "$sshd_config" "${sshd_config}.bak.$(date +%s)"
-
-  sed -i -E "s/^#?Port .*/Port $PORT_SSH/" "$sshd_config"
-  sed -i -E "s/^#?PermitRootLogin .*/PermitRootLogin no/" "$sshd_config"
-
-  if grep -qE '^#?PasswordAuthentication ' "$sshd_config"; then
-    sed -i -E 's/^#?PasswordAuthentication .*/PasswordAuthentication no/' "$sshd_config"
-  else
-    printf '\nPasswordAuthentication no\n' >> "$sshd_config"
-  fi
-
-  if grep -qE '^#?PermitEmptyPasswords ' "$sshd_config"; then
-    sed -i -E 's/^#?PermitEmptyPasswords .*/PermitEmptyPasswords no/' "$sshd_config"
-  else
-    printf 'PermitEmptyPasswords no\n' >> "$sshd_config"
-  fi
-
-  install -d -m 0755 "$sshd_dropin_dir"
-  cat > "$sshd_dropin_file" <<EOF
+  install -d -m 0755 "$SSHD_DROPIN_DIR"
+  temp_file="$(mktemp "$SSHD_DROPIN_DIR/.00-ubuntu-setup.conf.XXXXXX")"
+  chmod 0644 "$temp_file"
+  cat > "$temp_file" <<EOF
 Port $PORT_SSH
 PermitRootLogin no
+PubkeyAuthentication yes
 PasswordAuthentication no
+KbdInteractiveAuthentication no
 PermitEmptyPasswords no
 EOF
 
+  if [[ ! -f "$SSHD_DROPIN_FILE" ]] || ! cmp -s "$temp_file" "$SSHD_DROPIN_FILE"; then
+    if [[ -f "$SSHD_DROPIN_FILE" ]]; then
+      backup_file="${SSHD_DROPIN_FILE}.bak.$(date +%s)"
+      cp -a "$SSHD_DROPIN_FILE" "$backup_file"
+    fi
+    mv -f "$temp_file" "$SSHD_DROPIN_FILE"
+    changed=true
+  else
+    rm -f "$temp_file"
+  fi
+
   install -d -m 0755 /run/sshd
-  sshd -t
+  if ! sshd -t || ! verify_sshd_effective_config; then
+    if [[ "$changed" == "true" ]]; then
+      if [[ -n "$backup_file" ]]; then
+        cp -a "$backup_file" "$SSHD_DROPIN_FILE"
+      else
+        rm -f "$SSHD_DROPIN_FILE"
+      fi
+    fi
+    fail "SSH configuration validation failed; the SSH service was not restarted"
+  fi
+
+  if [[ -f "$SSHD_LEGACY_DROPIN_FILE" ]]; then
+    rm -f "$SSHD_LEGACY_DROPIN_FILE"
+    log "Removed obsolete SSH drop-in: $SSHD_LEGACY_DROPIN_FILE"
+  fi
 
   if systemctl list-unit-files --type=socket | grep -q '^ssh.socket'; then
     systemctl disable --now ssh.socket >/dev/null 2>&1 || true
@@ -360,6 +405,8 @@ EOF
 
   systemctl enable ssh >/dev/null 2>&1 || true
   systemctl restart sshd 2>/dev/null || systemctl restart ssh
+
+  verify_sshd_effective_config || fail "Effective SSH settings changed unexpectedly after restart"
 
   if ss -tln "( sport = :$PORT_SSH )" | grep -q LISTEN; then
     log "SSHD is listening on the new port: $PORT_SSH"
@@ -411,6 +458,10 @@ main() {
   require_cmd sed
   require_cmd grep
   require_cmd ss
+  require_cmd sshd
+  require_cmd awk
+  require_cmd cmp
+  require_cmd mktemp
   load_env
   require_vars
   validate_port
