@@ -18,7 +18,7 @@ remnawave-node/
 ```text
 Internet / Remnawave Panel
   |
-  | PORT_NODE/tcp
+  | PORT_NODE/tcp (allowed only from PANEL_IP)
   v
 remnanode container
   |
@@ -41,6 +41,7 @@ Required values:
 
 ```env
 PORT_NODE=22222
+PANEL_IP=203.0.113.10
 NODE_SECRET=change_me_super_secret_key
 ```
 
@@ -63,7 +64,8 @@ bash setup-remnawave-node.sh
 The script:
 
 * installs Docker if needed
-* configures UFW for `PORT_NODE` and `PORT_ARRAY_INBOUNDS`
+* restricts `PORT_NODE/tcp` to `PANEL_IP` in UFW
+* configures TCP, UDP, or dual-protocol UFW rules from `PORT_ARRAY_INBOUNDS`
 * issues a TLS certificate with `acme.sh` when `SERVER_DOMAIN` is set
 * writes `/opt/remnanode/docker-compose.yml`
 * starts the `remnanode` container
@@ -175,8 +177,17 @@ ls -l /etc/ssl/remnawave-node
 
 This module opens:
 
-* `PORT_NODE/tcp`
-* every TCP port from `PORT_ARRAY_INBOUNDS`
+* `PORT_NODE/tcp`, restricted to the panel IPv4 address from `PANEL_IP`
+* each protocol-specific rule from `PORT_ARRAY_INBOUNDS`
 * `80/tcp` and `443/tcp` when `SERVER_DOMAIN` is set
+
+Inbound rule examples:
+
+```env
+PORT_ARRAY_INBOUNDS=8441/tcp,8442/udp,8443/tcp,8444/tcp
+```
+
+Use `/both` only when one inbound genuinely needs both transports. Entries without
+a protocol remain compatible with older env files and default to TCP.
 
 Caddy is not used by this module.

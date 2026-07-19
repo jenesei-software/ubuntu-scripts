@@ -99,6 +99,7 @@ load_env() {
   SERVER_DOMAIN="$(strip_protocol "${SERVER_DOMAIN:-}")"
   DOMAIN_MAIL="${DOMAIN_MAIL:-}"
   PORT_NODE="${PORT_NODE:-22222}"
+  PANEL_IP="${PANEL_IP:-}"
   NODE_SECRET="${NODE_SECRET:-}"
   REMNAWAVE_NODE_IMAGE="${REMNAWAVE_NODE_IMAGE:-remnawave/node:latest}"
   DISABLE_IPV6="${DISABLE_IPV6:-true}"
@@ -111,7 +112,7 @@ load_env() {
 
 require_vars() {
   local missing=()
-  for var in PORT_NODE NODE_SECRET; do
+  for var in PORT_NODE PANEL_IP NODE_SECRET; do
     [[ -n "${!var:-}" ]] || missing+=("$var")
   done
   if [[ -n "$SERVER_DOMAIN" && -z "$DOMAIN_MAIL" ]]; then
@@ -135,6 +136,19 @@ validate_bool() {
   [[ "$value" == "true" || "$value" == "false" ]] || fail "$name must be true or false"
 }
 
+validate_ipv4() {
+  local name="$1"
+  local value="$2"
+  local octet
+  local -a octets
+
+  [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "$name must be a single IPv4 address"
+  IFS='.' read -r -a octets <<< "$value"
+  for octet in "${octets[@]}"; do
+    (( 10#$octet <= 255 )) || fail "$name must be a valid IPv4 address"
+  done
+}
+
 reject_placeholder() {
   local name="$1"
   local value="$2"
@@ -146,14 +160,23 @@ reject_placeholder() {
 }
 
 validate_port_array() {
-  local raw_port port
+  local raw_rule rule port protocol
   [[ -z "$PORT_ARRAY_INBOUNDS" ]] && return
 
-  IFS=',' read -r -a ports <<< "$PORT_ARRAY_INBOUNDS"
-  for raw_port in "${ports[@]}"; do
-    port="$(echo "$raw_port" | xargs)"
-    [[ -z "$port" ]] && continue
+  IFS=',' read -r -a rules <<< "$PORT_ARRAY_INBOUNDS"
+  for raw_rule in "${rules[@]}"; do
+    rule="$(echo "$raw_rule" | xargs)"
+    [[ -z "$rule" ]] && continue
+    if [[ "$rule" == */* ]]; then
+      port="${rule%/*}"
+      protocol="${rule##*/}"
+    else
+      port="$rule"
+      protocol="tcp"
+    fi
     validate_port_value PORT_ARRAY_INBOUNDS "$port"
+    [[ "$protocol" == "tcp" || "$protocol" == "udp" || "$protocol" == "both" ]] \
+      || fail "PORT_ARRAY_INBOUNDS protocol must be tcp, udp, or both: $rule"
   done
 }
 
@@ -168,6 +191,7 @@ validate_system_user_env() {
 validate_env() {
   [[ -z "$SERVER_DOMAIN" || "$SERVER_DOMAIN" =~ ^[^/]+$ ]] || fail "SERVER_DOMAIN must be a domain without path"
   validate_port_value PORT_NODE "$PORT_NODE"
+  validate_ipv4 PANEL_IP "$PANEL_IP"
   validate_bool DISABLE_IPV6 "$DISABLE_IPV6"
   reject_placeholder NODE_SECRET "$NODE_SECRET"
   validate_port_array
@@ -464,10 +488,11 @@ EOF
 }
 
 configure_ufw() {
-  local raw_port port
+  local raw_rule rule port protocol
 
   log "Opening Remnawave Node ports in UFW"
-  ufw allow "$PORT_NODE/tcp"
+  ufw --force delete allow "$PORT_NODE/tcp" >/dev/null 2>&1 || true
+  ufw allow from "$PANEL_IP" to any port "$PORT_NODE" proto tcp
 
   if [[ -n "$SERVER_DOMAIN" ]]; then
     ufw allow "80/tcp"
@@ -475,11 +500,23 @@ configure_ufw() {
   fi
 
   if [[ -n "$PORT_ARRAY_INBOUNDS" ]]; then
-    IFS=',' read -r -a ports <<< "$PORT_ARRAY_INBOUNDS"
-    for raw_port in "${ports[@]}"; do
-      port="$(echo "$raw_port" | xargs)"
-      [[ -z "$port" ]] && continue
-      ufw allow "$port/tcp"
+    IFS=',' read -r -a rules <<< "$PORT_ARRAY_INBOUNDS"
+    for raw_rule in "${rules[@]}"; do
+      rule="$(echo "$raw_rule" | xargs)"
+      [[ -z "$rule" ]] && continue
+      if [[ "$rule" == */* ]]; then
+        port="${rule%/*}"
+        protocol="${rule##*/}"
+      else
+        port="$rule"
+        protocol="tcp"
+      fi
+      if [[ "$protocol" == "both" ]]; then
+        ufw allow "$port/tcp"
+        ufw allow "$port/udp"
+      else
+        ufw allow "$port/$protocol"
+      fi
     done
   fi
 

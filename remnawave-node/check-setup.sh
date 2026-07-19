@@ -67,6 +67,7 @@ reset_env_vars() {
   SERVER_DOMAIN=""
   DOMAIN_MAIL=""
   PORT_NODE=""
+  PANEL_IP=""
   NODE_SECRET=""
   REMNAWAVE_NODE_IMAGE=""
   DISABLE_IPV6=""
@@ -110,6 +111,7 @@ load_env() {
   set_paths
   SERVER_DOMAIN="$(strip_protocol "${SERVER_DOMAIN:-}")"
   PORT_NODE="${PORT_NODE:-22222}"
+  PANEL_IP="${PANEL_IP:-}"
   DISABLE_IPV6="${DISABLE_IPV6:-true}"
   PORT_ARRAY_INBOUNDS="${PORT_ARRAY_INBOUNDS:-}"
   REMNAWAVE_NODE_SYSTEM_USER="${REMNAWAVE_NODE_SYSTEM_USER:-}"
@@ -215,6 +217,25 @@ ufw_has_tcp_port() {
   ufw status | grep -Eq "(^|[[:space:]])${port}/tcp([[:space:]]|$)"
 }
 
+ufw_has_port_protocol() {
+  local port="$1"
+  local protocol="$2"
+  ufw status | grep -Eq "(^|[[:space:]])${port}/${protocol}([[:space:]]|$)"
+}
+
+ufw_has_restricted_node_port() {
+  local port="$1"
+  local source_ip="$2"
+  ufw status | awk -v destination="${port}/tcp" -v source="$source_ip" \
+    '$1 == destination && $2 == "ALLOW" && $3 == "IN" && $4 == source { found=1 } END { exit !found }'
+}
+
+ufw_has_public_node_port() {
+  local port="$1"
+  ufw status | awk -v destination="${port}/tcp" \
+    '$1 == destination && $2 == "ALLOW" && $3 == "IN" && ($4 == "Anywhere" || $4 == "Anywhere(v6)") { found=1 } END { exit !found }'
+}
+
 check_system() {
   section "Base system"
   check_cmd docker
@@ -306,7 +327,18 @@ check_ufw() {
   fi
 
   if [[ -n "${PORT_NODE:-}" ]]; then
-    ufw_has_tcp_port "$PORT_NODE" && ok "Node port is open in UFW: $PORT_NODE/tcp" || warn "Node port was not found in UFW: $PORT_NODE/tcp"
+    if [[ -z "${PANEL_IP:-}" ]]; then
+      err "PANEL_IP is empty; cannot verify that $PORT_NODE/tcp is restricted to the panel"
+    elif ufw_has_restricted_node_port "$PORT_NODE" "$PANEL_IP"; then
+      ok "Node port is restricted to panel IP: $PANEL_IP -> $PORT_NODE/tcp"
+    else
+      err "Restricted node rule is missing: $PANEL_IP -> $PORT_NODE/tcp"
+    fi
+    if ufw_has_public_node_port "$PORT_NODE"; then
+      err "Node port is also open publicly and must be restricted: $PORT_NODE/tcp"
+    else
+      ok "Node port has no public Anywhere rule: $PORT_NODE/tcp"
+    fi
   fi
 
   if [[ -n "$SERVER_DOMAIN" ]]; then
@@ -315,12 +347,24 @@ check_ufw() {
   fi
 
   if [[ -n "${PORT_ARRAY_INBOUNDS:-}" ]]; then
-    local raw_port port
-    IFS=',' read -r -a ports <<< "$PORT_ARRAY_INBOUNDS"
-    for raw_port in "${ports[@]}"; do
-      port="$(echo "$raw_port" | xargs)"
-      [[ -z "$port" ]] && continue
-      ufw_has_tcp_port "$port" && ok "Inbound port is open: $port/tcp" || warn "Inbound port was not found: $port/tcp"
+    local raw_rule rule port protocol
+    IFS=',' read -r -a rules <<< "$PORT_ARRAY_INBOUNDS"
+    for raw_rule in "${rules[@]}"; do
+      rule="$(echo "$raw_rule" | xargs)"
+      [[ -z "$rule" ]] && continue
+      if [[ "$rule" == */* ]]; then
+        port="${rule%/*}"
+        protocol="${rule##*/}"
+      else
+        port="$rule"
+        protocol="tcp"
+      fi
+      if [[ "$protocol" == "both" ]]; then
+        ufw_has_port_protocol "$port" tcp && ok "Inbound port is open: $port/tcp" || warn "Inbound port was not found: $port/tcp"
+        ufw_has_port_protocol "$port" udp && ok "Inbound port is open: $port/udp" || warn "Inbound port was not found: $port/udp"
+      else
+        ufw_has_port_protocol "$port" "$protocol" && ok "Inbound port is open: $port/$protocol" || warn "Inbound port was not found: $port/$protocol"
+      fi
     done
   fi
 }

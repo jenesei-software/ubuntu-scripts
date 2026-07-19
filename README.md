@@ -378,7 +378,7 @@ The Supabase module does not open public ports directly. Supabase Kong and Supav
 
 The Remnawave Panel module does not open public ports directly. Remnawave Panel and the bundled subscription page are bound to local IP addresses by default, and Caddy proxies public HTTP/HTTPS traffic to them.
 
-The Remnawave Node module opens `PORT_NODE/tcp`, every TCP port from `PORT_ARRAY_INBOUNDS`, and `80/tcp` plus `443/tcp` when `SERVER_DOMAIN` is set for certificate issuance. Caddy is not used by this module.
+The Remnawave Node module restricts `PORT_NODE/tcp` to `PANEL_IP`, opens each TCP/UDP rule from `PORT_ARRAY_INBOUNDS` (`port/tcp`, `port/udp`, or `port/both`), and opens `80/tcp` plus `443/tcp` when `SERVER_DOMAIN` is set for certificate issuance. Caddy is not used by this module.
 
 The Caddy module installs UFW if needed and adds the HTTP/HTTPS rules. It does not force-enable UFW by itself, because enabling a firewall from an isolated Caddy script could affect SSH access on servers that did not run the Ubuntu module first.
 
