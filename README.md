@@ -86,6 +86,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   `-- run-web-audit.sh
 |-- ubuntu/
 |   |-- env.example
+|   |-- fix-ssh-password-auth.sh
 |   |-- setup-ubuntu.sh
 |   `-- check-setup.sh
 `-- wiki/

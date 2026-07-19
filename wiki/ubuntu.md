@@ -7,6 +7,7 @@ The `ubuntu/` module prepares a fresh Ubuntu server. It is isolated from other m
 ```text
 ubuntu/
 |-- env.example
+|-- fix-ssh-password-auth.sh
 |-- setup-ubuntu.sh
 `-- check-setup.sh
 ```
@@ -101,99 +102,15 @@ Only close the root session after the new SSH login works.
 
 ## Existing Servers: Disable SSH Password Login
 
-An older version of this module might not have disabled SSH password login because its configuration file had the wrong priority. Keep the current SSH session open and confirm key-only login from a second terminal before continuing:
+An older version of this module might not have disabled SSH password login because its configuration file had the wrong priority. Update the repository and run the repair script; it reads `PORT_SSH`, `USER_NAME`, and `SSH_PUB` from `ubuntu/.env` automatically:
 
 ```bash
-ssh -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
-  -o PreferredAuthentications=publickey USER_NAME@YOUR_SERVER_IP -p PORT_SSH
+cd ~/ubuntu-scripts
+git pull --ff-only
+sudo bash ubuntu/fix-ssh-password-auth.sh
 ```
 
-If key-only login works, paste this entire block into the existing server session:
-
-```bash
-sudo env SSH_HARDENING_PORT="${SSH_CONNECTION##* }" bash <<'EOF'
-set -Eeuo pipefail
-
-[[ "$SSH_HARDENING_PORT" =~ ^[0-9]+$ ]] || {
-  echo "ERROR: could not detect the current SSH port"
-  exit 1
-}
-
-config_dir=/etc/ssh/sshd_config.d
-managed_file="$config_dir/00-ubuntu-setup.conf"
-legacy_file="$config_dir/99-ubuntu-setup.conf"
-backup_dir="/root/ssh-config-backup-$(date +%Y%m%d%H%M%S)"
-
-install -d -m 0755 "$config_dir"
-install -d -m 0700 "$backup_dir"
-cp -a /etc/ssh/sshd_config "$backup_dir/"
-cp -a "$config_dir" "$backup_dir/"
-
-rollback() {
-  rm -f "$managed_file" "$legacy_file"
-
-  if [[ -f "$backup_dir/sshd_config.d/00-ubuntu-setup.conf" ]]; then
-    cp -a "$backup_dir/sshd_config.d/00-ubuntu-setup.conf" "$managed_file"
-  fi
-
-  if [[ -f "$backup_dir/sshd_config.d/99-ubuntu-setup.conf" ]]; then
-    cp -a "$backup_dir/sshd_config.d/99-ubuntu-setup.conf" "$legacy_file"
-  fi
-}
-
-temp_file="$(mktemp "$config_dir/.00-ubuntu-setup.conf.XXXXXX")"
-printf '%s\n' \
-  "Port $SSH_HARDENING_PORT" \
-  "PermitRootLogin no" \
-  "PubkeyAuthentication yes" \
-  "PasswordAuthentication no" \
-  "KbdInteractiveAuthentication no" \
-  "PermitEmptyPasswords no" > "$temp_file"
-
-chmod 0644 "$temp_file"
-mv -f "$temp_file" "$managed_file"
-
-if ! sshd -t; then
-  echo "ERROR: invalid SSH configuration; rolling back"
-  rollback
-  exit 1
-fi
-
-effective_config="$(sshd -T)"
-required_settings=(
-  "port $SSH_HARDENING_PORT"
-  "permitrootlogin no"
-  "pubkeyauthentication yes"
-  "passwordauthentication no"
-  "kbdinteractiveauthentication no"
-  "permitemptypasswords no"
-)
-
-for setting in "${required_settings[@]}"; do
-  if ! grep -Fqx "$setting" <<< "$effective_config"; then
-    echo "ERROR: effective setting not applied: $setting"
-    rollback
-    exit 1
-  fi
-done
-
-rm -f "$legacy_file"
-systemctl daemon-reload
-
-if ! systemctl restart ssh.service; then
-  echo "ERROR: SSH restart failed; rolling back"
-  rollback
-  systemctl daemon-reload
-  systemctl restart ssh.service || true
-  exit 1
-fi
-
-echo "OK: SSH password login is disabled"
-echo "Backup: $backup_dir"
-EOF
-```
-
-After it prints `OK`, open one more key-only session. Do not close the original session until the new login succeeds.
+Keep the current session open. After the script prints `OK`, confirm a new key-based SSH login before closing the original session.
 
 ## Verify
 
