@@ -23,6 +23,7 @@ load_env() {
   local file
   if [[ -n "$ENV_FILE_INPUT" ]]; then file="$(resolve_env_path "$ENV_FILE_INPUT")"; else file="$SCRIPT_DIR/.env"; fi
   YOUTRACK_URL=""; YOUTRACK_INSTALL_DIR=""; YOUTRACK_BIND_IP=""; YOUTRACK_PORT=""; YOUTRACK_IMAGE=""; YOUTRACK_CONTAINER_NAME=""; YOUTRACK_CONFIGURE_CADDY=""; CADDYFILE=""
+  YOUTRACK_OIDC_HOST=""; YOUTRACK_OIDC_ORIGIN_IP=""
   if [[ -f "$file" ]]; then
     info "Loading environment from $file"
     set -a
@@ -36,6 +37,8 @@ load_env() {
   YOUTRACK_IMAGE="${YOUTRACK_IMAGE:-jetbrains/youtrack:2026.2.17765}"
   YOUTRACK_CONTAINER_NAME="${YOUTRACK_CONTAINER_NAME:-youtrack}"
   YOUTRACK_CONFIGURE_CADDY="${YOUTRACK_CONFIGURE_CADDY:-true}"
+  YOUTRACK_OIDC_HOST="${YOUTRACK_OIDC_HOST:-}"
+  YOUTRACK_OIDC_ORIGIN_IP="${YOUTRACK_OIDC_ORIGIN_IP:-}"
   CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 }
 site_host() { local value="${YOUTRACK_URL:-}"; value="${value#http://}"; value="${value#https://}"; printf '%s\n' "${value%%/*}"; }
@@ -75,6 +78,23 @@ check_compose() {
   docker inspect --format '{{.Config.Image}}' "$YOUTRACK_CONTAINER_NAME" 2>/dev/null | grep -Fxq "$YOUTRACK_IMAGE" && ok "Expected image is configured" || err "Container image differs from $YOUTRACK_IMAGE"
 }
 
+check_oidc_origin() {
+  section "OIDC origin routing"
+  if [[ -z "$YOUTRACK_OIDC_HOST" && -z "$YOUTRACK_OIDC_ORIGIN_IP" ]]; then
+    info "No OIDC origin override is configured"
+    return
+  fi
+  if [[ -z "$YOUTRACK_OIDC_HOST" || -z "$YOUTRACK_OIDC_ORIGIN_IP" ]]; then
+    err "YOUTRACK_OIDC_HOST and YOUTRACK_OIDC_ORIGIN_IP must be set together"
+    return
+  fi
+  local configured resolved
+  configured="$(docker inspect --format '{{range .HostConfig.ExtraHosts}}{{println .}}{{end}}' "$YOUTRACK_CONTAINER_NAME" 2>/dev/null || true)"
+  grep -Fxq "$YOUTRACK_OIDC_HOST:$YOUTRACK_OIDC_ORIGIN_IP" <<< "$configured" && ok "Container pins $YOUTRACK_OIDC_HOST to the configured origin" || err "Container OIDC origin override is missing"
+  resolved="$(docker exec "$YOUTRACK_CONTAINER_NAME" getent ahostsv4 "$YOUTRACK_OIDC_HOST" 2>/dev/null | awk 'NR == 1 {print $1}' || true)"
+  [[ "$resolved" == "$YOUTRACK_OIDC_ORIGIN_IP" ]] && ok "Container resolves $YOUTRACK_OIDC_HOST to $resolved" || err "Container resolves $YOUTRACK_OIDC_HOST to ${resolved:-nothing}, expected $YOUTRACK_OIDC_ORIGIN_IP"
+}
+
 check_http() {
   section "HTTP"
   local code
@@ -100,5 +120,5 @@ check_caddy() {
 }
 
 summary() { section "Summary"; line INFO "$ERRORS error(s), $WARNINGS warning(s)"; }
-main() { require_root; load_env; check_system; check_files; check_compose; check_http; check_caddy; summary; (( ERRORS == 0 )); }
+main() { require_root; load_env; check_system; check_files; check_compose; check_oidc_origin; check_http; check_caddy; summary; (( ERRORS == 0 )); }
 main "$@"

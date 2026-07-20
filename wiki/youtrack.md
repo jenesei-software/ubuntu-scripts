@@ -64,7 +64,26 @@ The script backs up a changed Compose file but that file is not a database backu
 
 YouTrack 2026.1 and later supports a generic OpenID Connect authentication module. Install and initialize `authentik/`, then follow [the Authentik module guide](authentik.md#youtrack-oidc-integration).
 
-Do not disable password authentication or make OIDC the default until login has been tested in a private browser window. Keep an existing administrative session open during the test.
+The integration is a two-pass process: first create the Authentik provider with the provisional redirect URI, then create the YouTrack OpenID Connect module, copy its generated `/hub/api/rest/oauth2/interactive/login/<uuid>/land` URI into `authentik/.env`, and rerun `setup-youtrack-oidc.sh`.
+
+The **Default** checkbox is optional. Leave it disabled until **Test login** and a complete private-window login both succeed. Enabling it makes YouTrack redirect unauthenticated users directly to Authentik; leaving it disabled keeps the normal login page with Authentik as a selectable option. Keep the built-in password module enabled and verify the recovery page at `<youtrack-base-url>/hub/loginOptions` before making Authentik the default.
+
+If the first OIDC login creates a second user with a suffix, merge that account into the existing YouTrack administrator from **Administration > Access Management > Users**. Preserve the existing administrator's username and profile fields; the merge transfers the OIDC login and combines permissions. Do not delete the duplicate manually, and remember that merging accounts is irreversible.
+
+### Authentik behind Cloudflare
+
+The public Authentik hostname can remain **Proxied** in Cloudflare. If YouTrack's Java OIDC client times out while retrieving JWKS through Cloudflare, pin only the YouTrack container's server-to-server connection to the Authentik origin. In `youtrack/.env` on the YouTrack VPS, set both values:
+
+```dotenv
+YOUTRACK_OIDC_HOST=sso.example.com
+YOUTRACK_OIDC_ORIGIN_IP=203.0.113.10
+```
+
+Use the real Authentik hostname and its VPS public IPv4 address. Rerun `setup-youtrack.sh`; the generated Compose file adds an `extra_hosts` entry and recreates only the YouTrack service when required. The URL, hostname, TLS certificate validation, OIDC issuer, and JWKS URL do not change: only DNS resolution inside the YouTrack container bypasses Cloudflare.
+
+The Authentik origin must accept HTTPS from the YouTrack VPS, and Caddy must serve a valid certificate for the public Authentik hostname. Do not replace OIDC URLs with an IP address and do not disable TLS verification. `check-setup.sh` verifies both the generated container override and the hostname resolution seen inside the container.
+
+On the Authentik VPS, rerun `setup-authentik.sh` and then `setup-youtrack-oidc.sh`. The OIDC script installs an automatically refreshed Caddy JWKS fast path because YouTrack 2026.2 allows only `500 ms` for that response. Verify it with `authentik/check-setup.sh`; the report should confirm the JWKS cache, refresh timer, and Caddy fast path.
 
 ## Diagnostics
 
@@ -85,3 +104,4 @@ The checker is non-destructive and exits nonzero when required checks fail.
 - [Supported environments](https://www.jetbrains.com/help/youtrack/server/youtrack-supported-environments.html)
 - [Upgrade a Docker installation](https://www.jetbrains.com/help/youtrack/server/upgrade-with-docker-image.html)
 - [OpenID Connect authentication module](https://www.jetbrains.com/help/youtrack/server/openid-connect-authentication-module.html)
+- [Merge user accounts](https://www.jetbrains.com/help/youtrack/server/merge-user-accounts.html)

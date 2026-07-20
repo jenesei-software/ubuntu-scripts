@@ -34,6 +34,7 @@ load_env() {
   YOUTRACK_URL=""; YOUTRACK_INSTALL_DIR=""; YOUTRACK_BIND_IP=""; YOUTRACK_PORT=""
   YOUTRACK_IMAGE=""; YOUTRACK_CONTAINER_NAME=""; YOUTRACK_TIMEZONE=""; YOUTRACK_MIN_FREE_GB=""
   YOUTRACK_ALLOW_LOW_RESOURCES=""; YOUTRACK_UPGRADE_CONFIRMED=""; YOUTRACK_CONFIGURE_CADDY=""; YOUTRACK_CADDY_OVERWRITE_DOMAIN=""; CADDYFILE=""
+  YOUTRACK_OIDC_HOST=""; YOUTRACK_OIDC_ORIGIN_IP=""
   log "Loading environment from $ENV_FILE"
   set -a
   # shellcheck disable=SC1090
@@ -51,11 +52,30 @@ load_env() {
   YOUTRACK_UPGRADE_CONFIRMED="${YOUTRACK_UPGRADE_CONFIRMED:-false}"
   YOUTRACK_CONFIGURE_CADDY="${YOUTRACK_CONFIGURE_CADDY:-true}"
   YOUTRACK_CADDY_OVERWRITE_DOMAIN="${YOUTRACK_CADDY_OVERWRITE_DOMAIN:-ask}"
+  YOUTRACK_OIDC_HOST="${YOUTRACK_OIDC_HOST:-}"
+  YOUTRACK_OIDC_ORIGIN_IP="${YOUTRACK_OIDC_ORIGIN_IP:-}"
   CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 }
 
 validate_bool() { [[ "$2" == true || "$2" == false ]] || fail "$1 must be true or false"; }
 site_host() { local value="$YOUTRACK_URL"; value="${value#http://}"; value="${value#https://}"; printf '%s\n' "${value%%/*}"; }
+valid_hostname() {
+  local value="$1" label
+  [[ ${#value} -le 253 && "$value" =~ ^[A-Za-z0-9.-]+$ && "$value" != .* && "$value" != *. && "$value" != *..* ]] || return 1
+  local IFS=.
+  read -r -a labels <<< "$value"
+  for label in "${labels[@]}"; do
+    [[ ${#label} -le 63 && "$label" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?$ ]] || return 1
+  done
+}
+valid_ipv4() {
+  local value="$1" octet
+  local -a octets
+  [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  local IFS=.
+  read -r -a octets <<< "$value"
+  for octet in "${octets[@]}"; do (( 10#$octet <= 255 )) || return 1; done
+}
 
 validate_env() {
   [[ "$YOUTRACK_URL" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || fail "YOUTRACK_URL must be an HTTPS site URL without a path"
@@ -71,6 +91,11 @@ validate_env() {
   validate_bool YOUTRACK_UPGRADE_CONFIRMED "$YOUTRACK_UPGRADE_CONFIRMED"
   validate_bool YOUTRACK_CONFIGURE_CADDY "$YOUTRACK_CONFIGURE_CADDY"
   [[ "$YOUTRACK_CADDY_OVERWRITE_DOMAIN" == ask || "$YOUTRACK_CADDY_OVERWRITE_DOMAIN" == true || "$YOUTRACK_CADDY_OVERWRITE_DOMAIN" == false ]] || fail "YOUTRACK_CADDY_OVERWRITE_DOMAIN must be ask, true, or false"
+  if [[ -n "$YOUTRACK_OIDC_HOST" || -n "$YOUTRACK_OIDC_ORIGIN_IP" ]]; then
+    [[ -n "$YOUTRACK_OIDC_HOST" && -n "$YOUTRACK_OIDC_ORIGIN_IP" ]] || fail "YOUTRACK_OIDC_HOST and YOUTRACK_OIDC_ORIGIN_IP must be set together"
+    valid_hostname "$YOUTRACK_OIDC_HOST" || fail "YOUTRACK_OIDC_HOST must be a valid hostname"
+    valid_ipv4 "$YOUTRACK_OIDC_ORIGIN_IP" || fail "YOUTRACK_OIDC_ORIGIN_IP must be a valid IPv4 address"
+  fi
 }
 
 check_platform_and_resources() {
@@ -139,6 +164,14 @@ services:
     image: $YOUTRACK_IMAGE
     container_name: $YOUTRACK_CONTAINER_NAME
     restart: unless-stopped
+EOF
+  if [[ -n "$YOUTRACK_OIDC_HOST" ]]; then
+    cat >> "$tmp" <<EOF
+    extra_hosts:
+      - "$YOUTRACK_OIDC_HOST:$YOUTRACK_OIDC_ORIGIN_IP"
+EOF
+  fi
+  cat >> "$tmp" <<EOF
     stop_grace_period: 2m
     ports:
       - "$YOUTRACK_BIND_IP:$YOUTRACK_PORT:8080"

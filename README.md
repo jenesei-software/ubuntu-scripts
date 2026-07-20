@@ -174,6 +174,8 @@ bash check-setup.sh
 
 On a new installation, finish the JetBrains setup wizard and use the public HTTPS URL as the YouTrack Base URL.
 
+When an external OIDC provider is behind a CDN, the optional `YOUTRACK_OIDC_HOST` and `YOUTRACK_OIDC_ORIGIN_IP` pair pins only the YouTrack container's server-to-server connection to the provider origin while browsers continue through the CDN.
+
 Documentation: [wiki/youtrack.md](wiki/youtrack.md)
 
 ### `authentik/`
@@ -184,9 +186,12 @@ One Authentik identity provider behind the existing system Caddy, with optional 
 cd ~/ubuntu-scripts/authentik
 cp env.example .env
 nano .env
+chmod 600 .env
 bash setup-authentik.sh
 bash check-setup.sh
 ```
+
+Set `AUTHENTIK_ADMIN_USERNAME` and a non-placeholder `AUTHENTIK_ADMIN_PASSWORD` of at least 16 characters before the first run. The setup configures that administrator automatically; normal reruns preserve its password unless `AUTHENTIK_ADMIN_PASSWORD_ROTATE=true` is explicitly enabled for one run.
 
 After both services are initialized, prepare the YouTrack OIDC provider:
 
@@ -194,6 +199,8 @@ After both services are initialized, prepare the YouTrack OIDC provider:
 cd ~/ubuntu-scripts/authentik
 bash setup-youtrack-oidc.sh
 ```
+
+YouTrack generates a unique redirect URI for each OpenID Connect module, so the integration uses two passes: create the Authentik provider, copy the redirect URI shown by YouTrack into `authentik/.env`, then rerun `setup-youtrack-oidc.sh`. The complete safe setup sequence is in the module guide.
 
 Documentation: [wiki/authentik.md](wiki/authentik.md)
 

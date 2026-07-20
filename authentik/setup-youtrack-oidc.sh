@@ -15,12 +15,17 @@ resolve_env_path() { local value="$1"; if [[ "$value" = /* ]]; then printf '%s\n
 load_env() {
   if [[ -n "$ENV_FILE_INPUT" ]]; then ENV_FILE="$(resolve_env_path "$ENV_FILE_INPUT")"; else ENV_FILE="$SCRIPT_DIR/.env"; fi
   [[ -f "$ENV_FILE" ]] || fail "Environment file not found: $ENV_FILE"
-  AUTHENTIK_URL=""; AUTHENTIK_INSTALL_DIR=""; YOUTRACK_URL=""; AUTHENTIK_YOUTRACK_APP_NAME=""; AUTHENTIK_YOUTRACK_APP_SLUG=""; AUTHENTIK_YOUTRACK_CLIENT_ID=""; YOUTRACK_OIDC_REDIRECT_URI=""
+  AUTHENTIK_URL=""; AUTHENTIK_INSTALL_DIR=""; AUTHENTIK_BIND_IP=""; AUTHENTIK_HTTP_PORT=""; AUTHENTIK_CONFIGURE_CADDY=""; CADDYFILE=""
+  YOUTRACK_URL=""; AUTHENTIK_YOUTRACK_APP_NAME=""; AUTHENTIK_YOUTRACK_APP_SLUG=""; AUTHENTIK_YOUTRACK_CLIENT_ID=""; YOUTRACK_OIDC_REDIRECT_URI=""
   set -a
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
   AUTHENTIK_INSTALL_DIR="${AUTHENTIK_INSTALL_DIR:-/opt/authentik}"
+  AUTHENTIK_BIND_IP="${AUTHENTIK_BIND_IP:-127.0.0.1}"
+  AUTHENTIK_HTTP_PORT="${AUTHENTIK_HTTP_PORT:-9000}"
+  AUTHENTIK_CONFIGURE_CADDY="${AUTHENTIK_CONFIGURE_CADDY:-true}"
+  CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
   AUTHENTIK_YOUTRACK_APP_NAME="${AUTHENTIK_YOUTRACK_APP_NAME:-YouTrack}"
   AUTHENTIK_YOUTRACK_APP_SLUG="${AUTHENTIK_YOUTRACK_APP_SLUG:-youtrack}"
   AUTHENTIK_YOUTRACK_CLIENT_ID="${AUTHENTIK_YOUTRACK_CLIENT_ID:-youtrack}"
@@ -30,6 +35,7 @@ load_env() {
   INTEGRATION_ENV="$INTEGRATION_DIR/youtrack-oidc.env"
 }
 
+validate_bool() { [[ "$2" == true || "$2" == false ]] || fail "$1 must be true or false"; }
 validate_env() {
   [[ "$AUTHENTIK_URL" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || fail "AUTHENTIK_URL must be an HTTPS site URL"
   [[ "$YOUTRACK_URL" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || fail "YOUTRACK_URL must be an HTTPS site URL"
@@ -37,6 +43,11 @@ validate_env() {
   [[ "$AUTHENTIK_YOUTRACK_APP_SLUG" =~ ^[-A-Za-z0-9_]+$ ]] || fail "AUTHENTIK_YOUTRACK_APP_SLUG is invalid"
   [[ "$AUTHENTIK_YOUTRACK_CLIENT_ID" =~ ^[-A-Za-z0-9_.]+$ ]] || fail "AUTHENTIK_YOUTRACK_CLIENT_ID is invalid"
   [[ "$YOUTRACK_OIDC_REDIRECT_URI" == "${YOUTRACK_URL%/}/"* ]] || fail "YOUTRACK_OIDC_REDIRECT_URI must belong to YOUTRACK_URL"
+  [[ "$AUTHENTIK_BIND_IP" == 127.0.0.1 || "$AUTHENTIK_BIND_IP" == ::1 ]] || fail "AUTHENTIK_BIND_IP must remain a loopback address"
+  if [[ ! "$AUTHENTIK_HTTP_PORT" =~ ^[0-9]+$ ]] || (( 10#$AUTHENTIK_HTTP_PORT < 1024 || 10#$AUTHENTIK_HTTP_PORT > 65535 )); then
+    fail "AUTHENTIK_HTTP_PORT must be between 1024 and 65535"
+  fi
+  validate_bool AUTHENTIK_CONFIGURE_CADDY "$AUTHENTIK_CONFIGURE_CADDY"
   [[ -f "$RUNTIME_ENV" ]] || fail "Authentik runtime environment is missing. Run setup-authentik.sh first."
 }
 
@@ -119,12 +130,118 @@ EOF
   curl --proto '=https' --tlsv1.2 --fail --silent --show-error --connect-timeout 10 --max-time 30 "$discovery" | jq -e --arg issuer "$issuer" '.issuer == $issuer and (.authorization_endpoint | length > 0) and (.token_endpoint | length > 0) and (.jwks_uri | length > 0)' >/dev/null || fail "OIDC discovery document is invalid"
 }
 
+configure_jwks_fast_path() {
+  [[ "$AUTHENTIK_CONFIGURE_CADDY" == true ]] || { warn "Caddy integration is disabled; configure a sub-500 ms JWKS response in the external reverse proxy for YouTrack 2026.2"; return; }
+  require_cmd caddy; require_cmd systemctl
+  local host loopback_host cache_dir target refresh_script service_file timer_file caddy_include_dir snippet backup="" tmp
+  host="${AUTHENTIK_URL#https://}"; host="${host%%/*}"
+  if [[ "$AUTHENTIK_BIND_IP" == ::1 ]]; then loopback_host='[::1]'; else loopback_host="$AUTHENTIK_BIND_IP"; fi
+  cache_dir="/var/lib/caddy/authentik-jwks"
+  target="$cache_dir/${AUTHENTIK_YOUTRACK_APP_SLUG}.json"
+  refresh_script="/usr/local/sbin/authentik-youtrack-jwks-refresh"
+  service_file="/etc/systemd/system/authentik-youtrack-jwks-refresh.service"
+  timer_file="/etc/systemd/system/authentik-youtrack-jwks-refresh.timer"
+  caddy_include_dir="$(dirname -- "$CADDYFILE")/authentik.d"
+  snippet="$caddy_include_dir/50-youtrack-jwks.caddy"
+
+  grep -Fq "import ${caddy_include_dir}/*.caddy" "$CADDYFILE" || fail "Authentik's managed Caddy block does not support integration snippets. Rerun setup-authentik.sh, then rerun this script."
+  install -d -o caddy -g caddy -m 0755 "$cache_dir"
+  tmp="$(mktemp)"
+  cat > "$tmp" <<EOF
+#!/usr/bin/env bash
+set -Eeuo pipefail
+cache_dir="$cache_dir"
+target="$target"
+tmp="\$(mktemp "\$cache_dir/.${AUTHENTIK_YOUTRACK_APP_SLUG}.json.XXXXXX")"
+cleanup() { rm -f -- "\$tmp"; }
+trap cleanup EXIT
+curl --fail --silent --show-error --connect-timeout 3 --max-time 15 \\
+  -H 'Host: $host' -H 'X-Forwarded-Proto: https' \\
+  'http://${loopback_host}:${AUTHENTIK_HTTP_PORT}/application/o/${AUTHENTIK_YOUTRACK_APP_SLUG}/jwks/' -o "\$tmp"
+jq -e '(.keys | type == "array") and (.keys | length > 0) and all(.keys[]; (.kid | type == "string") and (.kty | type == "string"))' "\$tmp" >/dev/null
+chmod 0644 "\$tmp"
+mv -f -- "\$tmp" "\$target"
+EOF
+  install -m 0755 "$tmp" "$refresh_script"; rm -f "$tmp"
+
+  tmp="$(mktemp)"
+  cat > "$tmp" <<EOF
+[Unit]
+Description=Refresh Authentik YouTrack JWKS cache
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+User=caddy
+Group=caddy
+ExecStart=$refresh_script
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=$cache_dir
+EOF
+  install -m 0644 "$tmp" "$service_file"; rm -f "$tmp"
+
+  tmp="$(mktemp)"
+  cat > "$tmp" <<'EOF'
+[Unit]
+Description=Refresh Authentik YouTrack JWKS cache every minute
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=1min
+RandomizedDelaySec=5s
+Persistent=true
+Unit=authentik-youtrack-jwks-refresh.service
+
+[Install]
+WantedBy=timers.target
+EOF
+  install -m 0644 "$tmp" "$timer_file"; rm -f "$tmp"
+  systemctl daemon-reload
+  systemctl start authentik-youtrack-jwks-refresh.service
+  systemctl enable --now authentik-youtrack-jwks-refresh.timer
+  [[ -s "$target" ]] || fail "JWKS cache was not generated"
+
+  install -d -m 0755 "$caddy_include_dir"
+  tmp="$(mktemp)"
+  cat > "$tmp" <<EOF
+@youtrack_jwks path /application/o/${AUTHENTIK_YOUTRACK_APP_SLUG}/jwks/
+handle @youtrack_jwks {
+    root * $cache_dir
+    rewrite * /${AUTHENTIK_YOUTRACK_APP_SLUG}.json
+    header Cache-Control "public, max-age=60"
+    header X-YouTrack-JWKS-Cache "caddy-static"
+    file_server
+}
+EOF
+  if [[ -f "$snippet" ]]; then backup="${snippet}.bak.$(date +%s)"; cp -a "$snippet" "$backup"; fi
+  install -m 0644 "$tmp" "$snippet"; rm -f "$tmp"
+  if ! caddy validate --config "$CADDYFILE"; then
+    if [[ -n "$backup" ]]; then cp -a "$backup" "$snippet"; else rm -f "$snippet"; fi
+    fail "Caddy validation failed; restored the previous JWKS snippet"
+  fi
+  if ! systemctl reload caddy; then
+    if [[ -n "$backup" ]]; then cp -a "$backup" "$snippet"; else rm -f "$snippet"; fi
+    caddy validate --config "$CADDYFILE" >/dev/null && systemctl reload caddy
+    fail "Caddy reload failed; restored the previous JWKS snippet"
+  fi
+  log "Caddy now serves the YouTrack JWKS fast path from an automatically refreshed cache"
+}
+
 main() {
   require_root; require_cmd apt-get; load_env; validate_env; prepare_tools_and_secrets
   api_get '/core/users/me/' >/dev/null || fail "Authentik API token is not accepted"
-  configure_authentik; write_integration_file
+  configure_authentik; write_integration_file; configure_jwks_fast_path
   log "Authentik application and OAuth2 provider for YouTrack are ready"
   log "YouTrack OIDC values, including the client secret, are stored in $INTEGRATION_ENV (mode 0600)"
+  if [[ "$YOUTRACK_OIDC_REDIRECT_URI" == "${YOUTRACK_URL%/}/hub/api/rest/oauth2/auth" ]]; then
+    warn "YOUTRACK_OIDC_REDIRECT_URI is still the provisional first-pass value."
+    warn "Create the YouTrack OpenID Connect module, copy its generated redirect URI to $ENV_FILE, and rerun this script."
+  else
+    log "Configured strict YouTrack redirect URI: $YOUTRACK_OIDC_REDIRECT_URI"
+  fi
   warn "YouTrack is not changed automatically. Add and test an OpenID Connect auth module in Administration -> Access Management -> Auth Modules."
   warn "Keep password login and an existing administrator session until OIDC login has been tested. Do not make Authentik the default module yet."
   log "Show the values locally: sudo sed -n '1,5p' $INTEGRATION_ENV"

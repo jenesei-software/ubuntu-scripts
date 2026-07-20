@@ -7,6 +7,8 @@ DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
 DOCKER_SOURCE_LIST="/etc/apt/sources.list.d/docker.list"
 CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts authentik"
 CADDY_MANAGED_SUFFIX="# END ubuntu-scripts authentik"
+API_HEADER_FILE=""
+AUTHENTIK_EXISTING_SERVER=false
 
 timestamp() { date '+%F %T'; }
 log_line() { local level="$1"; shift; printf '[%s] %-7s %s\n' "$(timestamp)" "$level" "$*"; }
@@ -16,14 +18,18 @@ fail() { log_line ERROR "$*" >&2; exit 1; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || fail "Command not found: $1"; }
 require_root() { [[ ${EUID:-$(id -u)} -eq 0 ]] || fail "Run as root: cd ~/ubuntu-scripts/authentik && bash setup-authentik.sh"; }
 on_error() { local code=$?; log_line ERROR "Setup failed at line ${BASH_LINENO[0]:-${LINENO}}: ${BASH_COMMAND:-unknown} (exit $code)" >&2; }
+cleanup() { [[ -z "$API_HEADER_FILE" ]] || rm -f "$API_HEADER_FILE"; }
 trap on_error ERR
+trap cleanup EXIT
 
 resolve_env_path() { local value="$1"; if [[ "$value" = /* ]]; then printf '%s\n' "$value"; elif [[ -f "$value" ]]; then printf '%s/%s\n' "$(cd -- "$(dirname -- "$value")" && pwd)" "$(basename -- "$value")"; else printf '%s/%s\n' "$SCRIPT_DIR" "$value"; fi; }
 load_env() {
   if [[ -n "$ENV_FILE_INPUT" ]]; then ENV_FILE="$(resolve_env_path "$ENV_FILE_INPUT")"; else ENV_FILE="$SCRIPT_DIR/.env"; fi
   [[ -f "$ENV_FILE" ]] || fail "Environment file not found. Copy authentik/env.example to authentik/.env"
+  [[ "$(stat -c '%a' "$ENV_FILE" 2>/dev/null)" == 600 ]] || fail "Environment file must have mode 0600: chmod 600 $ENV_FILE"
   AUTHENTIK_URL=""; AUTHENTIK_INSTALL_DIR=""; AUTHENTIK_BIND_IP=""; AUTHENTIK_HTTP_PORT=""; AUTHENTIK_HTTPS_PORT=""; AUTHENTIK_VERSION=""; AUTHENTIK_RELEASE_CHANNEL=""
-  AUTHENTIK_BOOTSTRAP_EMAIL=""; AUTHENTIK_ERROR_REPORTING=""; AUTHENTIK_ENABLE_DOCKER_SOCKET=""; AUTHENTIK_ALLOW_LOW_RESOURCES=""; AUTHENTIK_UPGRADE_CONFIRMED=""
+  AUTHENTIK_ADMIN_USERNAME=""; AUTHENTIK_ADMIN_PASSWORD=""; AUTHENTIK_ADMIN_PASSWORD_ROTATE=""; AUTHENTIK_BOOTSTRAP_EMAIL=""
+  AUTHENTIK_ERROR_REPORTING=""; AUTHENTIK_ENABLE_DOCKER_SOCKET=""; AUTHENTIK_ALLOW_LOW_RESOURCES=""; AUTHENTIK_UPGRADE_CONFIRMED=""
   AUTHENTIK_CONFIGURE_CADDY=""; AUTHENTIK_CADDY_OVERWRITE_DOMAIN=""; CADDYFILE=""
   log "Loading environment from $ENV_FILE"
   set -a
@@ -36,6 +42,9 @@ load_env() {
   AUTHENTIK_HTTPS_PORT="${AUTHENTIK_HTTPS_PORT:-9443}"
   AUTHENTIK_VERSION="${AUTHENTIK_VERSION:-2026.5.5}"
   AUTHENTIK_RELEASE_CHANNEL="${AUTHENTIK_RELEASE_CHANNEL:-2026.5}"
+  AUTHENTIK_ADMIN_USERNAME="${AUTHENTIK_ADMIN_USERNAME:-akadmin}"
+  AUTHENTIK_ADMIN_PASSWORD="${AUTHENTIK_ADMIN_PASSWORD:-}"
+  AUTHENTIK_ADMIN_PASSWORD_ROTATE="${AUTHENTIK_ADMIN_PASSWORD_ROTATE:-false}"
   AUTHENTIK_BOOTSTRAP_EMAIL="${AUTHENTIK_BOOTSTRAP_EMAIL:-}"
   AUTHENTIK_ERROR_REPORTING="${AUTHENTIK_ERROR_REPORTING:-false}"
   AUTHENTIK_ENABLE_DOCKER_SOCKET="${AUTHENTIK_ENABLE_DOCKER_SOCKET:-false}"
@@ -44,9 +53,16 @@ load_env() {
   AUTHENTIK_CONFIGURE_CADDY="${AUTHENTIK_CONFIGURE_CADDY:-true}"
   AUTHENTIK_CADDY_OVERWRITE_DOMAIN="${AUTHENTIK_CADDY_OVERWRITE_DOMAIN:-ask}"
   CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
+  export -n AUTHENTIK_ADMIN_PASSWORD
 }
 
 validate_bool() { [[ "$2" == true || "$2" == false ]] || fail "$1 must be true or false"; }
+reject_placeholder() {
+  local name="$1" value="${2,,}"
+  case "$value" in
+    change_me*|changeme*|please_change*) fail "$name still contains a placeholder value. Change it in $ENV_FILE before running setup." ;;
+  esac
+}
 site_host() { local value="$AUTHENTIK_URL"; value="${value#https://}"; printf '%s\n' "${value%%/*}"; }
 validate_env() {
   [[ "$AUTHENTIK_URL" =~ ^https://[A-Za-z0-9.-]+/?$ ]] || fail "AUTHENTIK_URL must be an HTTPS site URL without a path"
@@ -61,7 +77,11 @@ validate_env() {
   [[ "$AUTHENTIK_HTTP_PORT" != "$AUTHENTIK_HTTPS_PORT" ]] || fail "AUTHENTIK_HTTP_PORT and AUTHENTIK_HTTPS_PORT must differ"
   [[ "$AUTHENTIK_VERSION" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+$ ]] || fail "AUTHENTIK_VERSION must be an exact version"
   [[ "$AUTHENTIK_RELEASE_CHANNEL" =~ ^[0-9]{4}\.[0-9]+$ && "$AUTHENTIK_VERSION" == "$AUTHENTIK_RELEASE_CHANNEL".* ]] || fail "AUTHENTIK_RELEASE_CHANNEL must match AUTHENTIK_VERSION"
+  [[ "$AUTHENTIK_ADMIN_USERNAME" =~ ^[A-Za-z0-9._-]{1,150}$ ]] || fail "AUTHENTIK_ADMIN_USERNAME must contain 1-150 letters, digits, dots, underscores, or hyphens"
+  [[ ${#AUTHENTIK_ADMIN_PASSWORD} -ge 16 ]] || fail "AUTHENTIK_ADMIN_PASSWORD must be at least 16 characters"
+  reject_placeholder AUTHENTIK_ADMIN_PASSWORD "$AUTHENTIK_ADMIN_PASSWORD"
   [[ -z "$AUTHENTIK_BOOTSTRAP_EMAIL" || "$AUTHENTIK_BOOTSTRAP_EMAIL" == *@* ]] || fail "AUTHENTIK_BOOTSTRAP_EMAIL is invalid"
+  validate_bool AUTHENTIK_ADMIN_PASSWORD_ROTATE "$AUTHENTIK_ADMIN_PASSWORD_ROTATE"
   validate_bool AUTHENTIK_ERROR_REPORTING "$AUTHENTIK_ERROR_REPORTING"
   validate_bool AUTHENTIK_ENABLE_DOCKER_SOCKET "$AUTHENTIK_ENABLE_DOCKER_SOCKET"
   validate_bool AUTHENTIK_ALLOW_LOW_RESOURCES "$AUTHENTIK_ALLOW_LOW_RESOURCES"
@@ -87,7 +107,7 @@ install_docker_and_tools() {
   if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
     log "Installing Docker Engine and Docker Compose plugin from Docker's official repository"
     export DEBIAN_FRONTEND=noninteractive UCF_FORCE_CONFFOLD=1 NEEDRESTART_MODE=a
-    apt-get update; apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install ca-certificates curl gnupg openssl iproute2
+    apt-get update; apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install ca-certificates curl gnupg jq openssl iproute2
     install -d -m 0755 /etc/apt/keyrings
     curl --proto '=https' --tlsv1.2 -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --batch --yes --dearmor -o "$DOCKER_KEYRING"
     chmod 0644 "$DOCKER_KEYRING"
@@ -96,7 +116,7 @@ install_docker_and_tools() {
     printf 'deb [arch=%s signed-by=%s] https://download.docker.com/linux/ubuntu %s stable\n' "$(dpkg --print-architecture)" "$DOCKER_KEYRING" "$VERSION_CODENAME" > "$DOCKER_SOURCE_LIST"
     apt-get update; apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   else
-    local -a packages=(); command -v curl >/dev/null 2>&1 || packages+=(curl); command -v openssl >/dev/null 2>&1 || packages+=(openssl); command -v ss >/dev/null 2>&1 || packages+=(iproute2)
+    local -a packages=(); command -v curl >/dev/null 2>&1 || packages+=(curl); command -v jq >/dev/null 2>&1 || packages+=(jq); command -v openssl >/dev/null 2>&1 || packages+=(openssl); command -v ss >/dev/null 2>&1 || packages+=(iproute2)
     if (( ${#packages[@]} )); then apt-get update; apt-get install -y "${packages[@]}"; fi
   fi
   systemctl enable --now docker
@@ -153,6 +173,18 @@ existing_server_owns_port() {
   [[ -n "$id" ]] || return 1
   docker inspect --format '{{range $p, $bindings := .NetworkSettings.Ports}}{{range $bindings}}{{println .HostIp .HostPort}}{{end}}{{end}}' "$id" 2>/dev/null | awk -v ip="$AUTHENTIK_BIND_IP" -v port="$port" '$1 == ip && $2 == port {found=1} END {exit !found}'
 }
+
+detect_existing_server() {
+  local id=""
+  if [[ -f "$AUTHENTIK_INSTALL_DIR/compose.yml" && -f "$AUTHENTIK_INSTALL_DIR/.env" ]]; then
+    id="$(cd "$AUTHENTIK_INSTALL_DIR" && docker compose --env-file .env -f compose.yml ps -aq server 2>/dev/null || true)"
+  fi
+  if [[ -n "$id" ]]; then
+    AUTHENTIK_EXISTING_SERVER=true
+    log "Existing Authentik server container detected"
+  fi
+}
+
 check_ports() {
   local port
   for port in "$AUTHENTIK_HTTP_PORT" "$AUTHENTIK_HTTPS_PORT"; do
@@ -198,8 +230,16 @@ remove_caddy_blocks() {
 configure_caddy() {
   [[ "$AUTHENTIK_CONFIGURE_CADDY" == true ]] || return 0
   [[ "${CADDY_KEEP_EXISTING:-false}" != true ]] || { log "Keeping compatible existing Caddy block"; return; }
-  local host backup tmp; host="$(site_host)"; tmp="$(mktemp)"
+  local host backup tmp caddy_include_dir include_placeholder_tmp; host="$(site_host)"; tmp="$(mktemp)"
+  caddy_include_dir="$(dirname -- "$CADDYFILE")/authentik.d"
   install -d -m 0755 "$(dirname -- "$CADDYFILE")"; [[ -f "$CADDYFILE" ]] || touch "$CADDYFILE"
+  install -d -m 0755 "$caddy_include_dir"
+  if [[ ! -s "$caddy_include_dir/00-empty.caddy" ]]; then
+    include_placeholder_tmp="$(mktemp)"
+    printf '# Managed Authentik integration snippets are imported from this directory.\n' > "$include_placeholder_tmp"
+    install -m 0644 "$include_placeholder_tmp" "$caddy_include_dir/00-empty.caddy"
+    rm -f "$include_placeholder_tmp"
+  fi
   backup="${CADDYFILE}.bak.$(date +%s)"; cp -a "$CADDYFILE" "$backup"
   remove_caddy_blocks "$host" "$tmp"; install -m 0644 "$tmp" "$CADDYFILE"; rm -f "$tmp"
   cat >> "$CADDYFILE" <<EOF
@@ -207,6 +247,7 @@ configure_caddy() {
 $CADDY_MANAGED_PREFIX $host
 $host {
     encode zstd gzip
+    import ${caddy_include_dir}/*.caddy
     reverse_proxy ${AUTHENTIK_BIND_IP}:${AUTHENTIK_HTTP_PORT}
 }
 $CADDY_MANAGED_SUFFIX $host
@@ -228,11 +269,65 @@ start_and_wait() {
   fail "Authentik did not become ready within 7.5 minutes"
 }
 
+prepare_api_access() {
+  local token
+  token="$(runtime_value AUTHENTIK_BOOTSTRAP_TOKEN)"
+  [[ -n "$token" ]] || fail "AUTHENTIK_BOOTSTRAP_TOKEN is missing from $AUTHENTIK_INSTALL_DIR/.env"
+  API_HEADER_FILE="$(mktemp)"
+  chmod 0600 "$API_HEADER_FILE"
+  printf 'Authorization: Bearer %s\n' "$token" > "$API_HEADER_FILE"
+}
+
+api_get() {
+  curl --fail --silent --show-error --connect-timeout 5 --max-time 30 \
+    -H "@$API_HEADER_FILE" -H 'Accept: application/json' \
+    "http://${AUTHENTIK_BIND_IP}:${AUTHENTIK_HTTP_PORT}/api/v3$1"
+}
+
+api_write() {
+  local method="$1" path="$2" payload="$3"
+  curl --fail --silent --show-error --connect-timeout 5 --max-time 30 \
+    -X "$method" -H "@$API_HEADER_FILE" -H 'Accept: application/json' -H 'Content-Type: application/json' \
+    --data-binary @- "http://${AUTHENTIK_BIND_IP}:${AUTHENTIK_HTTP_PORT}/api/v3$path" <<< "$payload"
+}
+
+configure_admin() {
+  local me admin_id current_username conflicts payload
+  prepare_api_access
+  me="$(api_get '/core/users/me/')" || fail "Authentik bootstrap API token is not accepted"
+  admin_id="$(jq -er '.user.pk' <<< "$me")" || fail "Could not read the Authentik bootstrap administrator ID"
+  current_username="$(jq -er '.user.username' <<< "$me")" || fail "Could not read the Authentik bootstrap administrator username"
+
+  if [[ "$current_username" != "$AUTHENTIK_ADMIN_USERNAME" ]]; then
+    conflicts="$(api_get "/core/users/?username=${AUTHENTIK_ADMIN_USERNAME}&page_size=20")"
+    if jq -e --arg id "$admin_id" '.results[] | select((.pk | tostring) != $id)' <<< "$conflicts" >/dev/null; then
+      fail "AUTHENTIK_ADMIN_USERNAME is already used by another Authentik account"
+    fi
+    payload="$(jq -cn --arg username "$AUTHENTIK_ADMIN_USERNAME" '{username:$username}')"
+    api_write PATCH "/core/users/${admin_id}/" "$payload" >/dev/null
+    log "Renamed the Authentik bootstrap administrator to $AUTHENTIK_ADMIN_USERNAME"
+  else
+    log "Authentik administrator username is already $AUTHENTIK_ADMIN_USERNAME"
+  fi
+
+  if [[ "$AUTHENTIK_EXISTING_SERVER" == true && "$AUTHENTIK_ADMIN_PASSWORD_ROTATE" != true ]]; then
+    warn "Preserving the existing administrator password; set AUTHENTIK_ADMIN_PASSWORD_ROTATE=true for an intentional rotation"
+  else
+    payload="$(jq -cn --arg password "$AUTHENTIK_ADMIN_PASSWORD" '{password:$password}')"
+    api_write POST "/core/users/${admin_id}/set_password/" "$payload" >/dev/null
+    log "Configured the Authentik administrator password from $ENV_FILE"
+    if [[ "$AUTHENTIK_ADMIN_PASSWORD_ROTATE" == true ]]; then
+      warn "Return AUTHENTIK_ADMIN_PASSWORD_ROTATE=false after this successful password rotation"
+    fi
+  fi
+}
+
 main() {
   require_root; require_cmd apt-get; load_env; validate_env; check_platform_and_resources; install_docker_and_tools
-  install -d -m 0750 "$AUTHENTIK_INSTALL_DIR"; write_runtime_env; download_compose; check_ports; preflight_upgrade; preflight_caddy; start_and_wait; configure_caddy
+  detect_existing_server
+  install -d -m 0750 "$AUTHENTIK_INSTALL_DIR"; write_runtime_env; download_compose; check_ports; preflight_upgrade; preflight_caddy; start_and_wait; configure_admin; configure_caddy
   log "Authentik is available at $AUTHENTIK_URL"
-  warn "On a new install, set the akadmin password at ${AUTHENTIK_URL%/}/if/flow/initial-setup/"
+  log "Administrator login: $AUTHENTIK_ADMIN_USERNAME"
   log "The generated bootstrap API token is stored only in $AUTHENTIK_INSTALL_DIR/.env (mode 0600)"
   log "Run diagnostics: cd ~/ubuntu-scripts/authentik && bash check-setup.sh"
 }
