@@ -64,6 +64,7 @@ Set `AUTHENTIK_ENABLE_DOCKER_SOCKET=true` only when automatic Docker outpost man
 - `authentik/.env`: root-owned module configuration containing the administrator password; keep mode `0600` and back it up securely
 - Docker volumes managed by the Compose project: PostgreSQL data, Authentik media, templates, and certificates
 - `/opt/authentik/integrations/youtrack-oidc.env`: generated YouTrack OIDC client settings, when enabled
+- `/opt/authentik/integrations/mailcow-oidc.env`: generated Mailcow OIDC client settings, when enabled
 
 Back up both Authentik data and the root-only runtime files. A database backup without `AUTHENTIK_SECRET_KEY` is incomplete for recovery.
 
@@ -206,6 +207,32 @@ YOUTRACK_OIDC_ORIGIN_IP=203.0.113.10
 After rerunning `youtrack/setup-youtrack.sh`, only the YouTrack container resolves that hostname directly to the Authentik VPS. Browsers still use Cloudflare, while the OIDC issuer and TLS hostname remain unchanged.
 
 The Authentik OIDC setup additionally serves the JWKS document from its automatically refreshed Caddy cache. Both parts are needed for YouTrack 2026.2: the container origin override avoids Cloudflare latency, and the Caddy fast path keeps the origin response below YouTrack's `500 ms` JWKS timeout.
+
+## Mailcow OIDC integration
+
+Mailcow `2025-03` and newer supports a native Generic-OIDC provider. On the Authentik VPS, add these values to `authentik/.env`:
+
+```dotenv
+MAILCOW_URL=https://mail.example.com
+AUTHENTIK_MAILCOW_APP_NAME=Mailcow
+AUTHENTIK_MAILCOW_APP_SLUG=mailcow
+AUTHENTIK_MAILCOW_CLIENT_ID=mailcow
+AUTHENTIK_MAILCOW_TEMPLATE_ATTRIBUTE=default
+MAILCOW_OIDC_REDIRECT_URI=https://mail.example.com
+```
+
+The redirect URI must exactly equal the public Mailcow UI URL without a trailing slash. Run:
+
+```bash
+cd ~/ubuntu-scripts/authentik
+sudo bash setup-mailcow-oidc.sh
+sudo bash check-setup.sh
+sudo sed -n '1,8p' /opt/authentik/integrations/mailcow-oidc.env
+```
+
+The setup creates a confidential OAuth2/OpenID provider, the Authentik application, and a `mailcow_template` scope mapping used by Mailcow's automatic mailbox provisioning. The last command displays the client secret, so run it only in the private administrator terminal and do not paste its output into chats or issues.
+
+The Mailcow-side fields, attribute mapping, user email requirements, app-password behavior for external mail clients, and safe test sequence are documented in [the Mailcow module guide](mailcow.md#authentik-oidc-integration).
 
 ## Upgrade
 

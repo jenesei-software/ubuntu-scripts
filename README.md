@@ -46,11 +46,16 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   |-- env.example
 |   |-- check-setup.sh
 |   |-- setup-authentik.sh
+|   |-- setup-mailcow-oidc.sh
 |   `-- setup-youtrack-oidc.sh
 |-- ghost/
 |   |-- env.example
 |   |-- check-setup.sh
 |   `-- setup-ghost.sh
+|-- mailcow/
+|   |-- env.example
+|   |-- check-setup.sh
+|   `-- setup-mailcow.sh
 |-- netdata/
 |   |-- env.example
 |   |-- check-setup.sh
@@ -94,6 +99,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
     |-- coolify.md
     |-- authentik.md
     |-- ghost.md
+    |-- mailcow.md
     |-- netdata.md
     |-- remnawave-node.md
     |-- remnawave-panel.md
@@ -180,7 +186,7 @@ Documentation: [wiki/youtrack.md](wiki/youtrack.md)
 
 ### `authentik/`
 
-One Authentik identity provider behind the existing system Caddy, with optional native OIDC integration for YouTrack 2026.1+.
+One Authentik identity provider behind the existing system Caddy, with optional native OIDC integrations for YouTrack 2026.1+ and Mailcow 2025-03+.
 
 ```bash
 cd ~/ubuntu-scripts/authentik
@@ -203,6 +209,23 @@ bash setup-youtrack-oidc.sh
 YouTrack generates a unique redirect URI for each OpenID Connect module, so the integration uses two passes: create the Authentik provider, copy the redirect URI shown by YouTrack into `authentik/.env`, then rerun `setup-youtrack-oidc.sh`. The complete safe setup sequence is in the module guide.
 
 Documentation: [wiki/authentik.md](wiki/authentik.md)
+
+### `mailcow/`
+
+One pinned Mailcow groupware and mail server on a dedicated VPS. The web UI stays behind the existing system Caddy, while SMTP, IMAP, POP3, and ManageSieve use their standard direct ports. The setup also installs automatic Caddy certificate synchronization for Mailcow's mail protocols.
+
+```bash
+cd ~/ubuntu-scripts/mailcow
+cp env.example .env
+nano .env
+chmod 600 .env
+sudo bash setup-mailcow.sh
+sudo bash check-setup.sh
+```
+
+After Mailcow and the separate Authentik VPS are ready, run `authentik/setup-mailcow-oidc.sh` on the Authentik VPS and complete Generic-OIDC in the Mailcow administrator UI. Keep the Mailcow hostname DNS-only in Cloudflare.
+
+Documentation: [wiki/mailcow.md](wiki/mailcow.md)
 
 ### `ghost/`
 
@@ -378,6 +401,8 @@ The Umami module does not open public ports directly. Umami listens on a local p
 The Uptime Kuma module does not open public ports directly. Uptime Kuma listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it.
 
 The YouTrack and Authentik modules do not open public application ports directly. Their HTTP ports bind to loopback, and the existing system Caddy terminates public HTTPS. Authentik's internal HTTPS port also remains loopback-only.
+
+The Mailcow web ports bind to loopback and Caddy owns public `80/tcp` and `443/tcp`. Mailcow publishes `25/tcp`, `465/tcp`, `587/tcp`, `143/tcp`, `993/tcp`, `110/tcp`, `995/tcp`, and `4190/tcp` directly through Docker. Docker forwarding can bypass ordinary UFW `INPUT` rules; manage exposure with the provider firewall or `DOCKER-USER` rules. The Mailcow hostname must be DNS-only in Cloudflare.
 
 The Netdata module does not open public ports directly. Netdata listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it. Netdata is protected with Caddy basic auth by default.
 

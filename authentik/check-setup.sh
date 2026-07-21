@@ -22,6 +22,7 @@ load_env() {
   AUTHENTIK_ADMIN_USERNAME=""; AUTHENTIK_ADMIN_PASSWORD=""; AUTHENTIK_ADMIN_PASSWORD_ROTATE=""
   AUTHENTIK_ENABLE_DOCKER_SOCKET=""; AUTHENTIK_CONFIGURE_CADDY=""; CADDYFILE=""
   YOUTRACK_URL=""; YOUTRACK_OIDC_REDIRECT_URI=""; AUTHENTIK_YOUTRACK_APP_SLUG=""
+  MAILCOW_URL=""; MAILCOW_OIDC_REDIRECT_URI=""; AUTHENTIK_MAILCOW_APP_SLUG=""; AUTHENTIK_MAILCOW_TEMPLATE_ATTRIBUTE=""
   if [[ -f "$file" ]]; then
     info "Loading environment from $file"; set -a
     # shellcheck disable=SC1090
@@ -32,7 +33,33 @@ load_env() {
   AUTHENTIK_VERSION="${AUTHENTIK_VERSION:-2026.5.5}"; AUTHENTIK_ADMIN_USERNAME="${AUTHENTIK_ADMIN_USERNAME:-akadmin}"; AUTHENTIK_ADMIN_PASSWORD="${AUTHENTIK_ADMIN_PASSWORD:-}"; AUTHENTIK_ADMIN_PASSWORD_ROTATE="${AUTHENTIK_ADMIN_PASSWORD_ROTATE:-false}"
   AUTHENTIK_ENABLE_DOCKER_SOCKET="${AUTHENTIK_ENABLE_DOCKER_SOCKET:-false}"; AUTHENTIK_CONFIGURE_CADDY="${AUTHENTIK_CONFIGURE_CADDY:-true}"; CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
   AUTHENTIK_YOUTRACK_APP_SLUG="${AUTHENTIK_YOUTRACK_APP_SLUG:-youtrack}"
+  AUTHENTIK_MAILCOW_APP_SLUG="${AUTHENTIK_MAILCOW_APP_SLUG:-mailcow}"; AUTHENTIK_MAILCOW_TEMPLATE_ATTRIBUTE="${AUTHENTIK_MAILCOW_TEMPLATE_ATTRIBUTE:-default}"
   export -n AUTHENTIK_ADMIN_PASSWORD
+}
+
+check_mailcow_oidc() {
+  section "Mailcow OIDC integration"
+  local integration="$AUTHENTIK_INSTALL_DIR/integrations/mailcow-oidc.env" authorize token userinfo redirect scopes attribute issuer discovery body expected_redirect
+  [[ -f "$integration" ]] || { info "Mailcow OIDC integration has not been prepared"; return; }
+  [[ "$(stat -c '%a' "$integration" 2>/dev/null)" == 600 ]] && ok "Mailcow OIDC client settings mode is 0600" || err "Mailcow OIDC client settings mode must be 0600"
+  authorize="$(sed -n 's/^MAILCOW_OIDC_AUTHORIZE_URL=//p' "$integration" | tail -n 1)"
+  token="$(sed -n 's/^MAILCOW_OIDC_TOKEN_URL=//p' "$integration" | tail -n 1)"
+  userinfo="$(sed -n 's/^MAILCOW_OIDC_USERINFO_URL=//p' "$integration" | tail -n 1)"
+  redirect="$(sed -n 's/^MAILCOW_OIDC_REDIRECT_URI=//p' "$integration" | tail -n 1)"
+  scopes="$(sed -n 's/^MAILCOW_OIDC_SCOPES=//p' "$integration" | tail -n 1)"
+  attribute="$(sed -n 's/^MAILCOW_OIDC_TEMPLATE_ATTRIBUTE=//p' "$integration" | tail -n 1)"
+  issuer="$(sed -n 's/^MAILCOW_OIDC_ISSUER=//p' "$integration" | tail -n 1)"
+  [[ -n "$authorize" && -n "$token" && -n "$userinfo" && -n "$redirect" && -n "$issuer" ]] || { err "Mailcow OIDC endpoints, issuer, or redirect URI are missing"; return; }
+  expected_redirect="${MAILCOW_OIDC_REDIRECT_URI:-${MAILCOW_URL%/}}"
+  [[ -z "$expected_redirect" || "$redirect" == "$expected_redirect" ]] && ok "Mailcow redirect URI matches the module environment" || err "Mailcow redirect URI differs from MAILCOW_OIDC_REDIRECT_URI; rerun setup-mailcow-oidc.sh"
+  [[ "$scopes" == *openid* && "$scopes" == *profile* && "$scopes" == *email* && "$scopes" == *mailcow_template* ]] && ok "Mailcow OIDC scopes include provisioning claims" || err "Mailcow OIDC scopes are incomplete"
+  [[ "$attribute" == "$AUTHENTIK_MAILCOW_TEMPLATE_ATTRIBUTE" ]] && ok "Mailcow template attribute matches the module environment" || err "Mailcow template attribute differs from AUTHENTIK_MAILCOW_TEMPLATE_ATTRIBUTE"
+  discovery="${issuer}.well-known/openid-configuration"
+  body="$(curl -fsS --connect-timeout 5 --max-time 15 "$discovery" 2>/dev/null || true)"
+  [[ -n "$body" ]] || { err "Mailcow OIDC discovery document is unavailable"; return; }
+  jq -e --arg issuer "$issuer" --arg authorize "$authorize" --arg token "$token" --arg userinfo "$userinfo" \
+    '.issuer == $issuer and .authorization_endpoint == $authorize and .token_endpoint == $token and .userinfo_endpoint == $userinfo' <<< "$body" >/dev/null 2>&1 \
+    && ok "Mailcow OIDC discovery endpoints match the generated settings" || err "Mailcow OIDC discovery endpoints do not match the generated settings"
 }
 site_host() { local value="${AUTHENTIK_URL:-}"; value="${value#https://}"; printf '%s\n' "${value%%/*}"; }
 check_cmd() { command -v "$1" >/dev/null 2>&1 && ok "Command found: $1" || err "Command not found: $1"; }
@@ -141,5 +168,5 @@ check_youtrack_oidc() {
   fi
 }
 
-main() { require_root; load_env; check_system; check_files; check_compose; check_http; check_admin; check_caddy; check_youtrack_oidc; summary; (( ERRORS == 0 )); }
+main() { require_root; load_env; check_system; check_files; check_compose; check_http; check_admin; check_caddy; check_youtrack_oidc; check_mailcow_oidc; summary; (( ERRORS == 0 )); }
 main "$@"
