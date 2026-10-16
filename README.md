@@ -1,4 +1,4 @@
-# Server Scripts
+# Ubuntu Scripts
 
 This repository is a collection of isolated server setup scripts.
 
