@@ -38,6 +38,11 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   |-- env.example
 |   |-- check-setup.sh
 |   `-- setup-caddy.sh
+|-- cloudflare-http/
+|   |-- env.example
+|   |-- apply-rules.sh
+|   |-- check-setup.sh
+|   `-- setup-cloudflare-http.sh
 |-- coolify/
 |   |-- env.example
 |   |-- check-setup.sh
@@ -96,6 +101,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   `-- check-setup.sh
 `-- wiki/
     |-- caddy.md
+    |-- cloudflare-http.md
     |-- coolify.md
     |-- authentik.md
     |-- ghost.md
@@ -146,6 +152,30 @@ If `caddy/.env` is missing, or if `CADDY_DOMAIN` and `CADDY_UPSTREAM` are empty,
 
 Documentation: [wiki/caddy.md](wiki/caddy.md)
 
+### `cloudflare-http/`
+
+Restricts Docker-published HTTP/HTTPS ports to Cloudflare's network, so a service behind Cloudflare
+cannot be reached by talking to the origin address directly. That is what makes a CDN-based decision —
+geo, consent, access rules — trustworthy: the headers such a decision reads are not checked against
+the source, so an open origin lets any client spoof them.
+
+The rules live in the `DOCKER-USER` iptables chain, because Docker publishes ports with its own rules
+that are evaluated before UFW. The module owns exactly one chain and one jump rule and never touches
+the rest of the chain.
+
+```bash
+cd ~/ubuntu-scripts/cloudflare-http
+cp env.example .env
+nano .env
+bash setup-cloudflare-http.sh
+bash check-setup.sh
+```
+
+Run it on the server that serves the domain, after the domain is proxied through Cloudflare. Verify
+from an outside host: the CDN address keeps working, the origin address times out.
+
+Documentation: [wiki/cloudflare-http.md](wiki/cloudflare-http.md)
+
 ### `coolify/`
 
 One self-hosted Coolify control plane using the official Coolify installer.
@@ -159,6 +189,8 @@ nano .env
 bash setup-coolify.sh
 bash check-setup.sh
 ```
+
+Coolify manages the host it runs on (the `localhost` server) over SSH as `root` with a key. The `ubuntu/` module sets `PermitRootLogin no`, so deploying resources on the Coolify host itself requires allowing root key login first; see [wiki/coolify.md](wiki/coolify.md). Deploying to remote servers is unaffected.
 
 After installation, replace `SERVER_IP` with the server's public IP and open `http://SERVER_IP:8000` in a web browser for the initial login. For example, if SSH uses `root@203.0.113.10`, open `http://203.0.113.10:8000`. Configure `https://coolify.example.com` as the instance domain in Coolify; after HTTPS works, use the domain instead of port `8000`.
 
@@ -383,6 +415,11 @@ The Caddy module opens:
 
 * `80/tcp`
 * `443/tcp`
+
+The Cloudflare HTTP module opens nothing. It restricts the ports other modules publish: after it runs,
+Docker-published `80/tcp` and `443/tcp` accept connections from Cloudflare's ranges only, and every
+other source is dropped. It filters those ports directly in the `DOCKER-USER` chain, because Docker
+publishes them with rules that ordinary UFW rules do not apply to.
 
 The Coolify module opens:
 
