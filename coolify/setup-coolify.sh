@@ -267,6 +267,14 @@ listener_for_port() {
   ss -H -ltnp "( sport = :$port )" 2>/dev/null || true
 }
 
+port_is_listening() {
+  ss -H -ltn "( sport = :$1 )" 2>/dev/null | grep -q .
+}
+
+container_state() {
+  docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$1" 2>/dev/null || true
+}
+
 check_port_conflicts() {
   local listener
   local port
@@ -360,14 +368,30 @@ run_installer() {
 verify_installation() {
   local app_port
   local container
+  local realtime_port
   local status
 
   require_cmd docker
-  for container in coolify coolify-db coolify-redis coolify-realtime; do
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+  for container in coolify coolify-db coolify-redis; do
+    status="$(container_state "$container")"
     [[ "$status" == "healthy" || "$status" == "running" ]] || fail "Container is not ready: $container ($status)"
     log "Container is ready: $container ($status)"
   done
+
+  # Coolify 4.4 and newer run the realtime service inside the main "coolify"
+  # container; older releases used a separate "coolify-realtime" container.
+  status="$(container_state coolify-realtime)"
+  if [[ -n "$status" ]]; then
+    [[ "$status" == "healthy" || "$status" == "running" ]] || fail "Container is not ready: coolify-realtime ($status)"
+    log "Container is ready: coolify-realtime ($status)"
+  else
+    realtime_port="$(runtime_port SOKETI_PORT 6001)"
+    if port_is_listening "$realtime_port" && port_is_listening 6002; then
+      log "Realtime service is running inside the coolify container (ports $realtime_port and 6002)"
+    else
+      fail "Realtime service is not listening on ports $realtime_port and 6002"
+    fi
+  fi
 
   app_port="$(runtime_port APP_PORT 8000)"
   curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "http://127.0.0.1:${app_port}/api/health" >/dev/null \

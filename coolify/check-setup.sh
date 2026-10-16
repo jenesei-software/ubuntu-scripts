@@ -235,8 +235,13 @@ check_compose() {
   fi
 }
 
+container_state() {
+  docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$1" 2>/dev/null || true
+}
+
 check_containers() {
   local container
+  local realtime_port
   local status
 
   section "Containers"
@@ -245,14 +250,33 @@ check_containers() {
     return
   fi
 
-  for container in coolify coolify-db coolify-redis coolify-realtime; do
-    status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+  for container in coolify coolify-db coolify-redis; do
+    status="$(container_state "$container")"
     case "$status" in
       healthy|running) ok "Container is ready: $container ($status)" ;;
       "") err "Container is missing: $container" ;;
       *) err "Container is not ready: $container ($status)" ;;
     esac
   done
+
+  # Coolify 4.4 and newer run the realtime service inside the main "coolify"
+  # container; older releases used a separate "coolify-realtime" container.
+  status="$(container_state coolify-realtime)"
+  if [[ -n "$status" ]]; then
+    case "$status" in
+      healthy|running) ok "Container is ready: coolify-realtime ($status)" ;;
+      *) err "Container is not ready: coolify-realtime ($status)" ;;
+    esac
+    return
+  fi
+
+  realtime_port="$(source_env_value SOKETI_PORT)"
+  realtime_port="${realtime_port:-6001}"
+  if port_is_listening "$realtime_port" && port_is_listening 6002; then
+    ok "Realtime service is running inside the coolify container (ports $realtime_port and 6002)"
+  else
+    err "Realtime service is not listening on ports $realtime_port and 6002"
+  fi
 }
 
 source_env_value() {
@@ -309,7 +333,10 @@ check_ssh() {
     err "Coolify localhost public key is not present in root authorized_keys"
   fi
 
-  if compgen -G "$COOLIFY_DATA_DIR/ssh/keys/id.*@host.docker.internal" >/dev/null; then
+  # Coolify 4.4+ names the localhost key "ssh_key@<server-id>"; older releases
+  # used "id.root@host.docker.internal". Accept both.
+  if compgen -G "$COOLIFY_DATA_DIR/ssh/keys/id.*@host.docker.internal" >/dev/null \
+    || compgen -G "$COOLIFY_DATA_DIR/ssh/keys/ssh_key@*" >/dev/null; then
     ok "Coolify localhost private key exists"
   else
     err "Coolify localhost private key is missing"
@@ -319,7 +346,8 @@ check_ssh() {
     permit_root_login="$(sshd -T 2>/dev/null | awk '$1 == "permitrootlogin" {print $2; exit}')"
     case "$permit_root_login" in
       yes|prohibit-password|without-password) ok "SSH permits root key login: $permit_root_login" ;;
-      *) err "SSH does not permit root key login: ${permit_root_login:-unknown}" ;;
+      no) warn "SSH root key login is disabled; Coolify cannot deploy to its localhost server. See wiki/coolify.md to enable it." ;;
+      *) warn "Unexpected SSH permitrootlogin value: ${permit_root_login:-unknown}" ;;
     esac
   fi
 }

@@ -24,6 +24,24 @@ Therefore an existing system Caddy and Coolify's integrated Caddy both want publ
 
 Although Coolify exposes proxy selection between Traefik and Caddy, its documentation still recommends Traefik for the most complete and tested integration.
 
+## Localhost server and SSH root login
+
+Coolify manages every server over SSH, including the machine where it is installed (the `localhost` server). For that connection it uses a generated key and connects as `root`.
+
+The repository's `ubuntu/` module sets `PermitRootLogin no`, so by default the `localhost` server cannot be validated and Coolify cannot deploy resources on the Coolify host itself.
+
+This is optional:
+
+- If all resources are deployed to remote servers connected to Coolify, the `localhost` server is not needed and the default `ubuntu/` hardening can stay.
+- To deploy on the Coolify host, allow root key login before installing Coolify and then validate the `localhost` server:
+
+```bash
+sudo sed -i 's/^PermitRootLogin no$/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config.d/00-ubuntu-setup.conf
+sudo sshd -t && sudo systemctl restart ssh
+```
+
+`prohibit-password` still blocks password login and only allows root with an SSH key. Rerunning `ubuntu/setup-ubuntu.sh` resets the setting to `PermitRootLogin no`, so repeat the change afterward. The checker reports a warning while root key login is disabled.
+
 ## Requirements
 
 - Ubuntu 24.04 LTS
@@ -148,7 +166,7 @@ curl -fsS http://127.0.0.1:8000/api/health
 ls -1t /data/coolify/source/installation-*.log | head
 ```
 
-The checker validates Ubuntu and resources, Docker 24+, Compose, required files and permissions, the `coolify` network, the four core containers, published ports, the local health endpoint, localhost SSH key access, and UFW rules. It exits nonzero when required checks fail.
+The checker validates Ubuntu and resources, Docker 24+, Compose, required files and permissions, the `coolify` network, the core containers (Coolify 4.4+ runs the realtime service inside the main `coolify` container, so the separate `coolify-realtime` container is optional), published ports, the local health endpoint, localhost SSH key access, and UFW rules. It exits nonzero when required checks fail.
 
 ## Upstream Documentation
 
