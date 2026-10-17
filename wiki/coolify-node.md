@@ -39,8 +39,17 @@ drop-in file, so removing the access is removing one file.
 
 ## Prepare Env
 
-In the panel: **Settings → Keys & Tokens → + Add**, name the key, save, and copy the **public** key it
-shows (the private half stays inside Coolify and is never printed).
+### Step 1. Create the key in the panel
+
+In Coolify: **Settings → Keys & Tokens → + Add**, give it a name (for example `server-c`) and save.
+
+The panel **generates the pair itself** and shows only the **public** half. The private half is stored
+inside Coolify, is never printed and never leaves the panel — that is why this module asks for the
+public key only, and why you must not run `ssh-keygen` here.
+
+Copy the shown line; it starts with `ssh-ed25519` or `ssh-rsa`.
+
+### Step 2. Put it into the env file
 
 On the managed server:
 
@@ -57,7 +66,8 @@ COOLIFY_SSH_PORT=
 COOLIFY_ALLOW_SUDO_NOPASSWD=true
 ```
 
-* `COOLIFY_SSH_PUBLIC_KEY` — the public key from the panel. Required.
+* `COOLIFY_SSH_PUBLIC_KEY` — the public key from the panel, created in **Settings → Keys & Tokens**.
+  Required; the script refuses to run without it.
 * `COOLIFY_USER` — the login user. Must not be `root`.
 * `COOLIFY_SSH_PORT` — the port the panel should use. Empty reads the first `Port` from `sshd -T`.
 * `COOLIFY_ALLOW_SUDO_NOPASSWD` — `false` leaves the server reachable but not deployable.

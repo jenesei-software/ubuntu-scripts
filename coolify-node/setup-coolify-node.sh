@@ -98,7 +98,7 @@ load_env() {
 
 validate_env() {
   [[ -n "$COOLIFY_SSH_PUBLIC_KEY" ]] \
-    || fail "COOLIFY_SSH_PUBLIC_KEY is empty: paste the public key from Coolify (Settings > Keys & Tokens)"
+    || fail "COOLIFY_SSH_PUBLIC_KEY is empty: first create the key in the panel (Settings > Keys & Tokens > + Add), then copy its public part into the env file"
 
   [[ "$COOLIFY_SSH_PUBLIC_KEY" =~ ^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521))[[:space:]]+[A-Za-z0-9+/=]+ ]] \
     || fail "COOLIFY_SSH_PUBLIC_KEY does not look like an OpenSSH public key"
