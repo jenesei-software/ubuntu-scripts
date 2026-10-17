@@ -47,6 +47,10 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   |-- env.example
 |   |-- check-setup.sh
 |   `-- setup-coolify.sh
+|-- coolify-node/
+|   |-- env.example
+|   |-- check-setup.sh
+|   `-- setup-coolify-node.sh
 |-- authentik/
 |   |-- env.example
 |   |-- check-setup.sh
@@ -103,6 +107,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
     |-- caddy.md
     |-- cloudflare-http.md
     |-- coolify.md
+    |-- coolify-node.md
     |-- authentik.md
     |-- ghost.md
     |-- mailcow.md
@@ -197,6 +202,28 @@ After installation, replace `SERVER_IP` with the server's public IP and open `ht
 Immediately create the first administrator if predefined credentials were not set in `coolify/.env`. With the default `COOLIFY_CONFIGURE_UFW=true`, the setup adds UFW allow rules for `80`, `443`, `8000`, `6001`, and `6002`, but it does not enable UFW or change the hosting provider's firewall.
 
 Documentation: [wiki/coolify.md](wiki/coolify.md)
+
+### `coolify-node/`
+
+Prepares a server so the panel can manage it. Run it on the server that will be managed, not on the
+panel: it creates an unprivileged user, authorizes the panel's public key and grants passwordless
+sudo. Docker and the proxy are installed by the panel afterwards, through the access this module
+gives it.
+
+Create the key in the panel first — **Settings → Keys & Tokens → + Add** — and copy the public half:
+
+```bash
+cd ~/ubuntu-scripts/coolify-node
+cp env.example .env
+nano .env          # COOLIFY_SSH_PUBLIC_KEY=ssh-ed25519 AAAA...
+bash setup-coolify-node.sh
+bash check-setup.sh
+```
+
+Then in the panel: **Servers → + Add** with the address, the SSH port, the configured user and that
+key, followed by **Validate**, **Docker → Install Docker** and **Proxy → Start Proxy**.
+
+Documentation: [wiki/coolify-node.md](wiki/coolify-node.md)
 
 ### `youtrack/`
 
