@@ -119,6 +119,127 @@ If the administrator variables were left empty, create the first administrator i
 
 Before or during initial setup, create a DNS record such as `coolify.example.com` pointing to the server's public IP. After login, configure `https://coolify.example.com` as the Coolify instance domain and enable its integrated proxy. Once HTTPS works, use that domain for future logins and close direct public access to `8000`, `6001`, and `6002` in the provider firewall if they are no longer needed. Keep `80/443` open for application traffic and certificate issuance.
 
+## Docker Compose Services and Domains
+
+A resource created with **+ New → Docker Compose** ("Docker Compose Empty") is stored by Coolify as a
+*service*. Coolify owns the Compose file, the environment file, the proxy labels, and the
+certificates; it does not read a Compose file from the server.
+
+### Domains
+
+Add domains under the service's **Domains** tab: choose the Compose service, the protocol, the
+hostname, and the internal container port. Coolify stores the value as a
+`SERVICE_FQDN_<SERVICE>_<PORT>` variable in the Compose definition and renders the Traefik router and
+service labels itself:
+
+```yaml
+services:
+  app:
+    image: example/app:latest
+    environment:
+      SERVICE_FQDN_APP_3000: app.example.com
+```
+
+* The Compose service name becomes upper case, with dashes and dots replaced by underscores; the
+  numeric suffix is the internal port.
+* Several hostnames for one service are comma-separated:
+  `SERVICE_FQDN_REDIRECT_80: 'example.com,www.example.com'`.
+* Do not hand-write `traefik.*` labels. They work, but the Domains tab cannot see them, Coolify does
+  not update them when a domain changes, and a later edit leaves duplicate routers behind.
+  Hand-written labels belong to the **Raw (deploy file as-is)** mode only.
+* Coolify rewrites the `SERVICE_FQDN_*` values when domains change, so editing them under
+  **Edit Compose File** is not the normal workflow.
+* After a change the header shows **Changes pending**; the containers keep the previous configuration
+  until they are redeployed.
+
+The rendered file is written to `/data/coolify/services/<service-uuid>/docker-compose.yml` on the
+target server. Treat it as generated output: a redeploy overwrites it.
+
+### Certificate Issuance Order
+
+Traefik requests a Let's Encrypt certificate with the HTTP-01 challenge on the first HTTPS request
+for a hostname. Point the DNS record at the server **before** that request. A challenge that failed
+because the domain still resolved elsewhere is not retried immediately; after the record is correct,
+restart the proxy to force a new attempt:
+
+```bash
+docker restart coolify-proxy
+```
+
+### Health Checks and 503 Responses
+
+Traefik removes a container marked `unhealthy` from its load balancer. When every server of a router
+is removed, the proxy answers `503` instead of forwarding the request, which looks like an outage
+while `docker ps` still reports the container as `Up`.
+
+Define a health check in the Compose definition for every long-running service, and make sure it
+passes:
+
+```yaml
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+```
+
+Inspect the real state with:
+
+```bash
+docker ps --format '{{.Names}}\t{{.Status}}'
+docker inspect <container> --format '{{json .State.Health}}'
+```
+
+The service header shows `Running (no healthcheck)` while any container in the stack has no health
+check configured.
+
+### Cross-Domain Redirects
+
+Coolify creates a TLS router per configured domain but does not create a redirect from one hostname
+to another. Use a small proxy service in the same Compose file that listens on port `80` and answers
+with `308`, and give it its own domains:
+
+```yaml
+  redirect:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+    volumes:
+      - /opt/redirect/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - coolify
+    environment:
+      SERVICE_FQDN_REDIRECT_80: 'example.com,www.example.com'
+      REDIRECT_TO: ${REDIRECT_TO}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+```
+
+```caddyfile
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	handle /healthz {
+		respond 200
+	}
+	handle {
+		redir https://{$REDIRECT_TO}{uri} 308
+	}
+}
+```
+
+Keep the target in a Coolify environment variable (`REDIRECT_TO`) rather than in the file on disk, so
+the host holds no application-specific configuration. The `handle` blocks are required: Caddy applies
+`redir` before `respond`, so a plain `respond /healthz 200` never matches, and the health check would
+follow the redirect to the public hostname and time out.
+
 ## Firewall
 
 With the default `COOLIFY_CONFIGURE_UFW=true`, the setup script adds idempotent UFW allow rules for:

@@ -110,6 +110,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
     |-- coolify-node.md
     |-- authentik.md
     |-- ghost.md
+    |-- ghost-coolify.md
     |-- mailcow.md
     |-- netdata.md
     |-- remnawave-node.md
@@ -301,6 +302,8 @@ bash check-setup.sh
 ```
 
 The Ghost module is started by root from this checkout and creates/uses the Ghost system user from `ghost/.env` only for running Ghost itself.
+
+Do not run it on a Coolify node: system Caddy and Coolify's proxy both need `80/443`. On a Coolify-managed server, deploy Ghost as a Docker Compose service instead; the migration and domain procedure is documented in [wiki/ghost-coolify.md](wiki/ghost-coolify.md).
 
 Documentation: [wiki/ghost.md](wiki/ghost.md)
 

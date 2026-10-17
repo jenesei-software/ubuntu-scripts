@@ -9,6 +9,16 @@ References:
 * https://docs.ghost.org/install/ubuntu
 * https://docs.ghost.org/ghost-cli/
 
+## Ghost on a Coolify-Managed Server
+
+Do not run this module on a host where Coolify is installed. Both the module's Caddy and Coolify's
+integrated proxy need public `80/443`, and Coolify generates its own proxy configuration under
+`/data/coolify/proxy`. The setup script stops on occupied ports for that reason.
+
+To run Ghost on a Coolify node, deploy it as a Docker Compose service instead. The Compose
+definition, the database and content migration from a native installation, and the domain setup are
+documented in [ghost-coolify.md](ghost-coolify.md).
+
 ## Requirements
 
 Before you begin, make sure you have:
@@ -116,6 +126,13 @@ After setup, open:
 ```text
 https://example.com/ghost
 ```
+
+## Canonical URL
+
+`GHOST_URL` is written into Ghost's own configuration and is independent of the reverse proxy: the
+proxy can route any hostname to Ghost, but Ghost still redirects browsers, feeds, and the Admin API
+to this URL. When the public domain changes, update `GHOST_URL` (or the `url` environment variable in
+a container deployment) and the site URL in Ghost Admin together with the proxy configuration.
 
 ## Domain Conflict Behavior
 
