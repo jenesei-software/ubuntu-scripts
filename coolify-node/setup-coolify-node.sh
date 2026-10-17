@@ -72,6 +72,46 @@ reset_env_vars() {
   COOLIFY_ALLOW_SUDO_NOPASSWD=""
 }
 
+# True when the env file has an assignment whose value contains whitespace but is not quoted.
+# Such a line would be executed as a command by `source`, so the file is parsed instead.
+env_needs_plain_parse() {
+  local line
+
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[[:space:]]*[A-Z_][A-Z0-9_]*= ]] || continue
+    line="${line#*=}"
+    [[ -z "$line" ]] && continue
+    case "$line" in
+      \"* | \'*) continue ;;
+    esac
+    [[ "$line" == *[[:space:]]* ]] && return 0
+  done < "$ENV_FILE"
+
+  return 1
+}
+
+# Used only when the env file cannot be executed: an unquoted value with spaces turns into a command.
+# Reads plain KEY=value pairs, strips one pair of surrounding quotes, ignores everything else.
+parse_env_fallback() {
+  local line
+  local key
+  local value
+
+  while IFS= read -r line; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" || "$line" == \#* || "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    key="${key//[[:space:]]/}"
+    [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]] || continue
+    value="${line#*=}"
+    value="${value%\'}"
+    value="${value#\'}"
+    value="${value%\"}"
+    value="${value#\"}"
+    printf -v "$key" '%s' "$value"
+  done < "$ENV_FILE"
+}
+
 load_env() {
   resolve_env_file
   reset_env_vars
@@ -83,10 +123,17 @@ load_env() {
   [[ -f "$ENV_FILE" ]] || fail "Environment file not found: $ENV_FILE"
   log "Loading environment from $ENV_FILE"
 
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
+  if env_needs_plain_parse; then
+    warn "$ENV_FILE has unquoted values with spaces; reading plain KEY=value pairs instead"
+    warn "Quote them, for example: COOLIFY_SSH_PUBLIC_KEY='ssh-ed25519 AAAA... panel'"
+    reset_env_vars
+    parse_env_fallback
+  else
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+  fi
 
   COOLIFY_SSH_PUBLIC_KEY="${COOLIFY_SSH_PUBLIC_KEY:-}"
   COOLIFY_USER="${COOLIFY_USER:-coolify}"

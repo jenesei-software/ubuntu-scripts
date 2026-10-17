@@ -60,11 +60,15 @@ nano .env
 ```
 
 ```env
-COOLIFY_SSH_PUBLIC_KEY=ssh-ed25519 AAAA... panel
+COOLIFY_SSH_PUBLIC_KEY='ssh-ed25519 AAAA... panel'
 COOLIFY_USER=coolify
 COOLIFY_SSH_PORT=
 COOLIFY_ALLOW_SUDO_NOPASSWD=true
 ```
+
+The key contains a space, so **single quotes are required**. Without them the value stops being an
+assignment and the shell tries to run the key as a command. If the file is left unquoted, the setup
+script detects it, warns and reads plain `KEY=value` pairs instead of executing the file.
 
 * `COOLIFY_SSH_PUBLIC_KEY` — the public key from the panel, created in **Settings → Keys & Tokens**.
   Required; the script refuses to run without it.
