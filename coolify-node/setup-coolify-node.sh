@@ -169,9 +169,11 @@ validate_env() {
 
 detect_ssh_port() {
   local port=""
+  local effective_ssh=""
 
   if command -v sshd >/dev/null 2>&1; then
-    port="$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2; exit }')"
+    effective_ssh="$(sshd -T 2>/dev/null || true)"
+    port="$(awk '$1 == "port" { print $2; exit }' <<< "$effective_ssh")"
   fi
 
   printf '%s\n' "${port:-22}"
@@ -300,14 +302,23 @@ verify_access() {
     warn "Could not run sudo without a password as $COOLIFY_USER"
   fi
 
-  if sshd -T 2>/dev/null | grep -qi '^pubkeyauthentication yes'; then
+  local effective_ssh
+  effective_ssh="$(sshd -T 2>/dev/null || true)"
+
+  if grep -qi '^pubkeyauthentication yes' <<< "$effective_ssh"; then
     ok "sshd accepts public key authentication"
   else
     warn "sshd does not report 'PubkeyAuthentication yes'; the panel will not connect"
   fi
 
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q 'Status: active'; then
-    if ufw status | grep -qE "^${SSH_PORT}/tcp[[:space:]]+ALLOW"; then
+  local ufw_status=""
+
+  if command -v ufw >/dev/null 2>&1; then
+    ufw_status="$(ufw status 2>/dev/null || true)"
+  fi
+
+  if [[ "$ufw_status" == *"Status: active"* ]]; then
+    if grep -qE "^${SSH_PORT}/tcp[[:space:]]+ALLOW" <<< "$ufw_status"; then
       ok "UFW allows TCP $SSH_PORT"
     else
       warn "UFW shows no allow rule for $SSH_PORT/tcp; the ubuntu module owns that rule"
