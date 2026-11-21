@@ -707,6 +707,19 @@ install_binary() {
   ok "Installed $("$MISTGATE_BIN_DIR/mistgate" version | sed -n '1p')"
 }
 
+install_decoy_helper() {
+  local helper="$MISTGATE_BIN_DIR/mistgate-decoy"
+  local tmp
+  tmp="$(mktemp)"
+  cat > "$tmp" <<EOF
+#!/usr/bin/env bash
+exec bash "$SCRIPT_DIR/use-decoy-site.sh" "\$@"
+EOF
+  install -m 0755 "$tmp" "$helper"
+  rm -f "$tmp"
+  ok "Installed decoy helper: $helper"
+}
+
 run_panel_setup() {
   section "Panel data directory"
   local -a setup_args=(setup --public-url "$MISTGATE_PUBLIC_URL" --data-dir "$MISTGATE_DATA_DIR")
@@ -1233,6 +1246,7 @@ main() {
   verify_panel_manifest
   verify_manifest_metadata
   install_binary
+  install_decoy_helper
   run_panel_setup
   build_serve_command
   write_unit

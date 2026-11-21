@@ -170,6 +170,11 @@ check_binary() {
   if [[ -f "$binary.prev" ]]; then
     info "Previous binary kept for rollback: $binary.prev"
   fi
+  if [[ -x "$MISTGATE_BIN_DIR/mistgate-decoy" ]]; then
+    ok "Decoy helper is installed: $MISTGATE_BIN_DIR/mistgate-decoy"
+  else
+    warn "Decoy helper is missing: $MISTGATE_BIN_DIR/mistgate-decoy (rerun setup-mistgate.sh)"
+  fi
 }
 
 check_data_dir() {

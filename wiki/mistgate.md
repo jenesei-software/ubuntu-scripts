@@ -218,26 +218,36 @@ The starters are small fictional sites:
 
 They are starting points, not production decoys. Replace the files or edit the texts before sharing the address; the same starter on many installations is as recognizable as the built-in page. When setup installs a starter it prints a warning, and `check-setup.sh` keeps warning while the `starter-site:` comment remains.
 
-After installation just copy your own site over the files:
+After installation just run one command with your site directory:
 
 ```bash
-sudo cp -r ./my-site/. /srv/mistgate-decoy/
-sudo find /srv/mistgate-decoy -type d -exec chmod 0755 {} +
-sudo find /srv/mistgate-decoy -type f -exec chmod 0644 {} +
+sudo mistgate-decoy /root/my-site
 ```
 
-Content changes are picked up on the next request; no restart is needed. Only adding or removing `MISTGATE_DECOY_DIR` itself needs a rerun of `setup-mistgate.sh`.
-
-To switch to another starter later:
+That validates the site, backs up the old directory, copies the files, fixes permissions and leaves the panel serving the new pages without a restart. Use a path the root user can read; upload the site to `/root` or `/tmp` first if it is on your laptop:
 
 ```bash
-cd ~/ubuntu-scripts/mistgate
-bash use-decoy-site.sh --list
-bash use-decoy-site.sh rybalka
-bash use-decoy-site.sh --force palatki   # keeps the old directory as a backup
+scp -r ./my-site deploy@panel.example.com:/tmp/my-site
+ssh -p 10022 deploy@panel.example.com
+sudo mistgate-decoy /tmp/my-site
 ```
 
-The setup script never overwrites an existing site. A non-empty directory without `index.html`, a symlink anywhere in the tree, or unreadable files stops it before any change.
+To use another starter:
+
+```bash
+sudo mistgate-decoy --list
+sudo mistgate-decoy rybalka
+```
+
+The old directory is kept as `/srv/mistgate-decoy.bak.<timestamp>`; the command prints it. To roll back:
+
+```bash
+sudo mistgate-decoy /srv/mistgate-decoy.bak.<timestamp>
+```
+
+The setup script never overwrites an existing site on its own. A non-empty directory without `index.html`, a symlink anywhere in the tree, or unreadable files stops the helper before it touches the target.
+
+Only adding or removing `MISTGATE_DECOY_DIR` itself needs a rerun of `setup-mistgate.sh`; replacing the files does not.
 
 The directory needs `index.html`; optional `404.html`, `429.html` and `robots.txt` replace the built-ins. It must be outside `/home` and `/root` (the service has `ProtectHome=yes`). If `robots.txt` is absent, the panel serves one that blocks known AI crawlers.
 
