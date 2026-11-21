@@ -710,12 +710,17 @@ install_binary() {
 run_panel_setup() {
   section "Panel data directory"
   local -a setup_args=(setup --public-url "$MISTGATE_PUBLIC_URL" --data-dir "$MISTGATE_DATA_DIR")
+  # mistgate setup also reads MISTGATE_ADMIN_HOST and MISTGATE_ADMIN_LISTEN
+  # from the environment. load_env exports every value from .env, so clear
+  # both here and let the selected mode pass its explicit flag. Otherwise
+  # the default MISTGATE_ADMIN_LISTEN silently turns path mode into listen.
+  local -a setup_env=(env -u MISTGATE_ADMIN_HOST -u MISTGATE_ADMIN_LISTEN)
   case "$MISTGATE_ADMIN_MODE" in
     host) setup_args+=(--admin-host "$MISTGATE_ADMIN_HOST") ;;
     listen) setup_args+=(--admin-listen "$MISTGATE_ADMIN_LISTEN") ;;
   esac
 
-  if ! "$MISTGATE_BIN_DIR/mistgate" "${setup_args[@]}" > "$TMP_DIR/setup.out" 2>&1; then
+  if ! "${setup_env[@]}" "$MISTGATE_BIN_DIR/mistgate" "${setup_args[@]}" > "$TMP_DIR/setup.out" 2>&1; then
     cat "$TMP_DIR/setup.out" >&2
     fail "mistgate setup failed. Fix the cause and rerun; existing data is preserved."
   fi
