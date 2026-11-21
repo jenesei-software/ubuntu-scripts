@@ -26,6 +26,8 @@ mistgate/
 `-- decoy-sites/
 ```
 
+`setup-mistgate.sh` also installs `/usr/local/bin/mistgate-decoy`, a small wrapper around `use-decoy-site.sh`; use it to replace the panel decoy site.
+
 ## Architecture
 
 ```text
@@ -224,12 +226,10 @@ After installation just run one command with your site directory:
 sudo mistgate-decoy /root/my-site
 ```
 
-That validates the site, backs up the old directory, copies the files, fixes permissions and leaves the panel serving the new pages without a restart. Use a path the root user can read; upload the site to `/root` or `/tmp` first if it is on your laptop:
+That validates the site, backs up the old directory, copies the files, fixes permissions and leaves the panel serving the new pages without a restart. If the site is on your laptop, upload and install it in one line:
 
 ```bash
-scp -r ./my-site deploy@panel.example.com:/tmp/my-site
-ssh -p 10022 deploy@panel.example.com
-sudo mistgate-decoy /tmp/my-site
+scp -r ./my-site deploy@panel.example.com:/tmp/my-site && ssh -p 10022 deploy@panel.example.com 'sudo mistgate-decoy /tmp/my-site'
 ```
 
 To use another starter:

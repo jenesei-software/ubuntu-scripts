@@ -325,7 +325,7 @@ bash check-setup.sh
 
 Point the panel hostname directly at the server: node agents pin the panel CA, and Let's Encrypt validates the domain on the server, so a CDN or TLS-terminating proxy in front of the panel does not work. Use a dedicated server; do not combine it with `caddy/` or Coolify unless you select `MISTGATE_TLS_MODE=caddy`.
 
-The setup creates `/srv/mistgate-decoy` and fills it with one of five starter sites from `mistgate/decoy-sites/` (`MISTGATE_DECOY_SITE=auto`, or `rybalka`, `palatki`, `gazirovka`, `bakery`, `veloservice`). Those are starting points: replace the files with your own site afterwards; no restart is needed.
+The setup creates `/srv/mistgate-decoy` and fills it with one of five starter sites from `mistgate/decoy-sites/` (`MISTGATE_DECOY_SITE=auto`, or `rybalka`, `palatki`, `gazirovka`, `bakery`, `veloservice`). Those are starting points: replace them with one command, `sudo mistgate-decoy /path/to/your-site`; no restart is needed.
 
 For nodes, set `MISTGATE_ROLE=node` in `ubuntu/.env` so the base opens `80/443`, then add the node in the panel. With the hardened base (root login and password auth closed, custom SSH port), use the manual one-time command from **Nodes → Add node**, or add the panel key plus `MISTGATE_PANEL_SSH_NOPASSWD=true` for the SSH auto-install. The module guide has both paths.
 
