@@ -21,12 +21,8 @@ mistgate/
 |-- env.example
 |-- setup-mistgate.sh
 |-- update-mistgate.sh
-|-- check-setup.sh
-|-- use-decoy-site.sh
-`-- decoy-sites/
+`-- check-setup.sh
 ```
-
-`setup-mistgate.sh` also installs `/usr/local/bin/mistgate-decoy`, a small wrapper around `use-decoy-site.sh`; use it to replace the panel decoy site.
 
 ## Architecture
 
@@ -193,73 +189,26 @@ ssh -N -p 10022 -L 8081:127.0.0.1:8081 deploy@panel.example.com
 
 Then open `http://localhost:8081/`. Passkeys are bound to the exact admin address stored by `mistgate setup`; changing the address later is not supported without a new data directory.
 
-### Decoy Site
+### Decoy Sites
 
-The built-in "Coming soon" page is identical on every installation and therefore recognizable. The module prepares a real directory and connects it to the panel:
+The panel's own public address uses the built-in "Coming soon" page. This module does not configure a static decoy directory for the panel; the built-in page is identical on every installation and is recognizable.
 
-```env
-MISTGATE_DECOY_DIR=/srv/mistgate-decoy
-```
+Decoy sites for nodes are managed entirely in the admin UI:
 
-On the first run the directory is created, and if it is empty, one of the five starter sites from `mistgate/decoy-sites/` is copied into it. Choose one explicitly, or let the panel hostname pick:
+1. Open a node, tab **Сервер**, block **Сайт-ширма**.
+2. Choose **Встроенный** or upload **Свой сайт** (ZIP, TAR or TAR.GZ).
+3. The archive must have `index.html` at its root and contain only static files. Limits: 2 MiB total, 4096 files, no symlinks, no `..` paths. Optional `404.html`, `429.html` and `robots.txt` replace the built-ins.
+4. The panel stores the bundle by SHA-256, sends it to the node and applies it without restarting the listeners. Changes are visible to clients without a node restart.
 
-```env
-MISTGATE_DECOY_SITE=auto
-# rybalka | palatki | gazirovka | bakery | veloservice
-```
+The **Сайт панели** option requires a panel decoy directory, which this module does not configure. Use per-node uploads, or choose the built-in page.
 
-The starters are small fictional sites:
+The upstream guide recommends unique texts and a plausible small site; avoid public templates and the words VPN, proxy, tunnel, server, hosting or Mistgate in the pages.
 
-| Name | Theme |
-| --- | --- |
-| `rybalka` | fishing shop and lake trips |
-| `palatki` | tents and camping gear |
-| `gazirovka` | a small project about sugar in drinks |
-| `bakery` | a neighbourhood bakery |
-| `veloservice` | bicycle repair |
-
-They are starting points, not production decoys. Replace the files or edit the texts before sharing the address; the same starter on many installations is as recognizable as the built-in page. When setup installs a starter it prints a warning, and `check-setup.sh` keeps warning while the `starter-site:` comment remains.
-
-After installation just run one command with your site directory:
+Verify from your own machine after the upload:
 
 ```bash
-sudo mistgate-decoy /root/my-site
-```
-
-That validates the site, backs up the old directory, copies the files, fixes permissions and leaves the panel serving the new pages without a restart. If the site is on your laptop, upload and install it in one line:
-
-```bash
-scp -r ./my-site deploy@panel.example.com:/tmp/my-site && ssh -p 10022 deploy@panel.example.com 'sudo mistgate-decoy /tmp/my-site'
-```
-
-To use another starter:
-
-```bash
-sudo mistgate-decoy --list
-sudo mistgate-decoy rybalka
-```
-
-The old directory is kept as `/srv/mistgate-decoy.bak.<timestamp>`; the command prints it. To roll back:
-
-```bash
-sudo mistgate-decoy /srv/mistgate-decoy.bak.<timestamp>
-```
-
-The setup script never overwrites an existing site on its own. A non-empty directory without `index.html`, a symlink anywhere in the tree, or unreadable files stops the helper before it touches the target.
-
-Only adding or removing `MISTGATE_DECOY_DIR` itself needs a rerun of `setup-mistgate.sh`; replacing the files does not.
-
-The directory needs `index.html`; optional `404.html`, `429.html` and `robots.txt` replace the built-ins. It must be outside `/home` and `/root` (the service has `ProtectHome=yes`). If `robots.txt` is absent, the panel serves one that blocks known AI crawlers.
-
-The same directory is used for nodes: with a valid panel decoy site, a new node can use **Сайт панели** and receive a copy of these files. That is why the 2 MiB / 4096 file limits and the no-symlink rule matter. A larger directory still works for the panel itself, but nodes will not be offered it.
-
-Do not use a public template or the same texts on several installations: the point is to look like an ordinary small site. The upstream guide also warns against VPN, proxy, tunnel, server, hosting or Mistgate words anywhere in the pages.
-
-Verify from your own machine:
-
-```bash
-curl -si https://panel.example.com/ | head -n 20
-curl -si https://panel.example.com/no-such-page-7f3a | head -n 20
+curl -si https://de1.example.com/ | head -n 20
+curl -si https://de1.example.com/no-such-page-7f3a | head -n 20
 ```
 
 The first call should return `200` with your home page; the second should return your `404.html`.

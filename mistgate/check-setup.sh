@@ -66,8 +66,6 @@ reset_env_vars() {
   MISTGATE_CHANNEL=""
   MISTGATE_VERSION=""
   MISTGATE_AGENT_PORT=""
-  MISTGATE_DECOY_DIR="/srv/mistgate-decoy"
-  MISTGATE_DECOY_SITE="auto"
   MISTGATE_CONFIGURE_UFW=""
   CADDYFILE=""
 }
@@ -100,8 +98,6 @@ load_env() {
   MISTGATE_BIN_DIR="${MISTGATE_BIN_DIR:-/usr/local/bin}"
   MISTGATE_CHANNEL="${MISTGATE_CHANNEL:-stable}"
   MISTGATE_AGENT_PORT="${MISTGATE_AGENT_PORT:-8443}"
-  MISTGATE_DECOY_DIR="${MISTGATE_DECOY_DIR-/srv/mistgate-decoy}"
-  MISTGATE_DECOY_SITE="${MISTGATE_DECOY_SITE:-auto}"
   MISTGATE_CONFIGURE_UFW="${MISTGATE_CONFIGURE_UFW:-true}"
   CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 }
@@ -131,7 +127,7 @@ check_platform() {
 check_commands() {
   section "Commands"
   local tool
-  for tool in curl du find openssl sha256sum stat systemctl ss; do
+  for tool in curl find openssl sha256sum stat systemctl ss; do
     if command -v "$tool" >/dev/null 2>&1; then
       ok "Command found: $tool"
     else
@@ -169,11 +165,6 @@ check_binary() {
   fi
   if [[ -f "$binary.prev" ]]; then
     info "Previous binary kept for rollback: $binary.prev"
-  fi
-  if [[ -x "$MISTGATE_BIN_DIR/mistgate-decoy" ]]; then
-    ok "Decoy helper is installed: $MISTGATE_BIN_DIR/mistgate-decoy"
-  else
-    warn "Decoy helper is missing: $MISTGATE_BIN_DIR/mistgate-decoy (rerun setup-mistgate.sh)"
   fi
 }
 
@@ -371,68 +362,6 @@ check_local_http() {
   fi
 }
 
-check_decoy() {
-  section "Decoy site"
-  if [[ -z "$MISTGATE_DECOY_DIR" ]]; then
-    info "No MISTGATE_DECOY_DIR configured; the panel serves the built-in 'Coming soon' page"
-    return
-  fi
-
-  if [[ ! -d "$MISTGATE_DECOY_DIR" || -L "$MISTGATE_DECOY_DIR" ]]; then
-    err "Decoy directory is missing or is a symlink: $MISTGATE_DECOY_DIR"
-    return
-  fi
-  if [[ ! -f "$MISTGATE_DECOY_DIR/index.html" ]]; then
-    err "Decoy directory has no index.html: $MISTGATE_DECOY_DIR"
-  elif [[ ! -r "$MISTGATE_DECOY_DIR/index.html" ]]; then
-    err "Decoy index.html is not readable by root"
-  else
-    ok "Decoy site exists: $MISTGATE_DECOY_DIR"
-    local starter
-    starter="$(sed -n 's/.*starter-site:[[:space:]]*\([a-z]*\).*/\1/p' "$MISTGATE_DECOY_DIR/index.html" | sed -n '1p')"
-    if [[ -n "$starter" ]]; then
-      warn "Starter decoy site '$starter' is still in place; replace its files with your own before sharing the address"
-    elif [[ "$MISTGATE_DECOY_SITE" != "auto" ]]; then
-      info "Configured starter: $MISTGATE_DECOY_SITE (the installed files differ, so they were edited or replaced)"
-    fi
-  fi
-
-  if find "$MISTGATE_DECOY_DIR" -type l -print -quit 2>/dev/null | grep -q .; then
-    err "Decoy site contains symbolic links; the panel cannot copy it to nodes"
-  fi
-
-  local decoy_size decoy_files
-  decoy_size="$(du -sb "$MISTGATE_DECOY_DIR" | awk '{print $1}')"
-  decoy_files="$(find "$MISTGATE_DECOY_DIR" -type f | wc -l | tr -d '[:space:]')"
-  info "Decoy size: $((decoy_size / 1024)) KiB, files: $decoy_files"
-  if (( decoy_size > 2 * 1024 * 1024 )); then
-    warn "Decoy site is larger than 2 MiB; the panel can serve it but cannot offer it to nodes"
-  fi
-  if (( decoy_files > 4096 )); then
-    warn "Decoy site has more than 4096 files; the panel cannot offer it to nodes"
-  fi
-
-  local host code
-  host="$(site_host)"
-  case "$MISTGATE_TLS_MODE" in
-    acme|files)
-      code="$(curl --silent --show-error --insecure --resolve "$host:443:127.0.0.1" \
-        --connect-timeout 3 --max-time 8 -o /dev/null -w '%{http_code}' "https://$host/" || true)"
-      ;;
-    caddy)
-      code="$(curl --silent --show-error --connect-timeout 3 --max-time 8 \
-        -H "Host: $host" -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/" || true)"
-      ;;
-  esac
-  if [[ "$code" == "200" ]]; then
-    ok "Decoy home page answers HTTP 200"
-  elif [[ -n "$code" && "$code" != "000" ]]; then
-    warn "Decoy home page answers HTTP $code instead of 200"
-  else
-    err "Could not reach the decoy home page"
-  fi
-}
-
 check_certificate() {
   section "TLS certificate"
   local host enddate
@@ -571,7 +500,6 @@ main() {
   check_unit
   check_listeners
   check_local_http
-  check_decoy
   check_certificate
   check_caddy
   check_firewall

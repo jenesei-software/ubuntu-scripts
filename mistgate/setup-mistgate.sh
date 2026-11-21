@@ -20,7 +20,6 @@ UNIT_FILE="/etc/systemd/system/mistgate.service"
 CONFIG_DIR="/etc/mistgate"
 ADMIN_URL_FILE="$CONFIG_DIR/admin-url"
 UPDATE_CHANNEL_FILE="$CONFIG_DIR/panel-update-channel"
-DECOY_SITES_DIR="$SCRIPT_DIR/decoy-sites"
 
 CADDY_MANAGED_PREFIX="# BEGIN ubuntu-scripts mistgate"
 CADDY_MANAGED_SUFFIX="# END ubuntu-scripts mistgate"
@@ -85,9 +84,6 @@ reset_env_vars() {
   MISTGATE_TLS_KEY=""
   MISTGATE_AGENT_PORT=""
   MISTGATE_AGENT_ADDR=""
-  MISTGATE_DECOY_DIR="/srv/mistgate-decoy"
-  MISTGATE_DECOY_SITE=""
-  DECOY_SITE_CHOSEN=""
   MISTGATE_DATA_DIR=""
   MISTGATE_BIN_DIR=""
   MISTGATE_VERSION=""
@@ -125,7 +121,6 @@ load_env() {
   MISTGATE_ADMIN_LISTEN="${MISTGATE_ADMIN_LISTEN:-127.0.0.1:8081}"
   MISTGATE_TLS_MODE="${MISTGATE_TLS_MODE:-acme}"
   MISTGATE_AGENT_PORT="${MISTGATE_AGENT_PORT:-8443}"
-  MISTGATE_DECOY_SITE="${MISTGATE_DECOY_SITE:-auto}"
   MISTGATE_DATA_DIR="${MISTGATE_DATA_DIR:-/var/lib/mistgate}"
   MISTGATE_BIN_DIR="${MISTGATE_BIN_DIR:-/usr/local/bin}"
   MISTGATE_CHANNEL="${MISTGATE_CHANNEL:-stable}"
@@ -271,51 +266,6 @@ validate_env() {
   validate_abs_path MISTGATE_DATA_DIR "$MISTGATE_DATA_DIR"
   validate_abs_path MISTGATE_BIN_DIR "$MISTGATE_BIN_DIR"
 
-  if [[ -n "$MISTGATE_DECOY_DIR" ]]; then
-    validate_abs_path MISTGATE_DECOY_DIR "$MISTGATE_DECOY_DIR"
-
-    if [[ -e "$MISTGATE_DECOY_DIR" || -L "$MISTGATE_DECOY_DIR" ]]; then
-      [[ -d "$MISTGATE_DECOY_DIR" && ! -L "$MISTGATE_DECOY_DIR" ]] \
-        || fail "MISTGATE_DECOY_DIR must be a real directory, not a symlink: $MISTGATE_DECOY_DIR"
-
-      if [[ ! -f "$MISTGATE_DECOY_DIR/index.html" || -L "$MISTGATE_DECOY_DIR/index.html" ]]; then
-        if find "$MISTGATE_DECOY_DIR" -mindepth 1 -print -quit 2>/dev/null | grep -q .; then
-          fail "MISTGATE_DECOY_DIR is not empty but has no regular index.html: $MISTGATE_DECOY_DIR"
-        fi
-      else
-        [[ -r "$MISTGATE_DECOY_DIR/index.html" ]] || fail "MISTGATE_DECOY_DIR/index.html is not readable by root"
-
-        if find "$MISTGATE_DECOY_DIR" -type l -print -quit 2>/dev/null | grep -q .; then
-          fail "MISTGATE_DECOY_DIR must not contain symbolic links: the panel cannot copy them to nodes"
-        fi
-        if find "$MISTGATE_DECOY_DIR" -type f ! -readable -print -quit 2>/dev/null | grep -q .; then
-          fail "MISTGATE_DECOY_DIR contains files that root cannot read"
-        fi
-
-        local decoy_size decoy_files
-        decoy_size="$(du -sb "$MISTGATE_DECOY_DIR" | awk '{print $1}')"
-        decoy_files="$(find "$MISTGATE_DECOY_DIR" -type f | wc -l | tr -d '[:space:]')"
-        if (( decoy_size > 2 * 1024 * 1024 )); then
-          warn "The decoy site is $((decoy_size / 1024)) KiB; the panel serves it, but cannot offer it to nodes (limit 2 MiB)"
-        fi
-        if (( decoy_files > 4096 )); then
-          warn "The decoy site has $decoy_files files; the panel serves it, but cannot offer it to nodes (limit 4096)"
-        fi
-      fi
-    fi
-
-    case "$MISTGATE_DECOY_SITE" in
-      auto) ;;
-      rybalka|palatki|gazirovka|bakery|veloservice)
-        [[ -d "$DECOY_SITES_DIR/$MISTGATE_DECOY_SITE" ]] \
-          || fail "MISTGATE_DECOY_SITE=$MISTGATE_DECOY_SITE is missing from $DECOY_SITES_DIR"
-        ;;
-      *)
-        fail "MISTGATE_DECOY_SITE must be auto, rybalka, palatki, gazirovka, bakery or veloservice"
-        ;;
-    esac
-  fi
-
   [[ "$MISTGATE_CHANNEL" == "stable" || "$MISTGATE_CHANNEL" == "testing" || "$MISTGATE_CHANNEL" == "dev" ]] \
     || fail "MISTGATE_CHANNEL must be stable, testing or dev"
   if [[ -n "$MISTGATE_VERSION" ]]; then
@@ -387,7 +337,7 @@ check_resources() {
 check_commands() {
   section "Required commands"
   local tool
-  for tool in awk base64 cksum curl df du find grep install mktemp sed sha256sum sort ss tail tar tr wc; do
+  for tool in awk base64 curl df grep install mktemp sed sha256sum sort ss tail tar tr wc; do
     require_cmd "$tool"
   done
   if [[ "$MISTGATE_ALLOW_UNSIGNED_RELEASE" != "true" ]]; then
@@ -707,19 +657,6 @@ install_binary() {
   ok "Installed $("$MISTGATE_BIN_DIR/mistgate" version | sed -n '1p')"
 }
 
-install_decoy_helper() {
-  local helper="$MISTGATE_BIN_DIR/mistgate-decoy"
-  local tmp
-  tmp="$(mktemp)"
-  cat > "$tmp" <<EOF
-#!/usr/bin/env bash
-exec bash "$SCRIPT_DIR/use-decoy-site.sh" "\$@"
-EOF
-  install -m 0755 "$tmp" "$helper"
-  rm -f "$tmp"
-  ok "Installed decoy helper: $helper"
-}
-
 run_panel_setup() {
   section "Panel data directory"
   local -a setup_args=(setup --public-url "$MISTGATE_PUBLIC_URL" --data-dir "$MISTGATE_DATA_DIR")
@@ -864,53 +801,6 @@ confirm_caddy_replacement() {
   [[ "$answer" =~ ^([yY]|yes|YES)$ ]]
 }
 
-decoy_starter_names() {
-  printf '%s\n' rybalka palatki gazirovka bakery veloservice
-}
-
-choose_decoy_site() {
-  if [[ "$MISTGATE_DECOY_SITE" != "auto" ]]; then
-    printf '%s\n' "$MISTGATE_DECOY_SITE"
-    return 0
-  fi
-
-  local -a names=()
-  local hash index
-  mapfile -t names < <(decoy_starter_names)
-  hash="$(printf '%s' "$(site_host)" | cksum | awk '{print $1}')"
-  index=$(( hash % ${#names[@]} ))
-  printf '%s\n' "${names[$index]}"
-}
-
-prepare_decoy_dir() {
-  [[ -n "$MISTGATE_DECOY_DIR" ]] || {
-    log "MISTGATE_DECOY_DIR is empty; the panel will serve its built-in page"
-    return 0
-  }
-
-  local dir="$MISTGATE_DECOY_DIR"
-  if [[ ! -e "$dir" ]]; then
-    install -d -m 0755 "$(dirname -- "$dir")"
-    install -d -m 0755 "$dir"
-  fi
-
-  if [[ -f "$dir/index.html" ]]; then
-    log "Keeping the existing decoy site in $dir"
-    return 0
-  fi
-
-  local site
-  site="$(choose_decoy_site)"
-  [[ -d "$DECOY_SITES_DIR/$site" ]] || fail "Decoy starter site not found: $DECOY_SITES_DIR/$site"
-
-  log "Installing the '$site' starter decoy site into $dir"
-  cp -a "$DECOY_SITES_DIR/$site/." "$dir/"
-  DECOY_SITE_CHOSEN="$site"
-  find "$dir" -type d -exec chmod 0755 {} +
-  find "$dir" -type f -exec chmod 0644 {} +
-  ok "Starter decoy site '$site' is installed; replace its files with your own before sharing the address"
-}
-
 preflight_caddy() {
   [[ "$MISTGATE_TLS_MODE" == "caddy" ]] || return 0
   section "Caddy"
@@ -1014,9 +904,6 @@ build_serve_command() {
   esac
   if [[ "$MISTGATE_ADMIN_MODE" == "listen" ]]; then
     SERVE_ARGS+=(--admin-listen "$MISTGATE_ADMIN_LISTEN")
-  fi
-  if [[ -n "$MISTGATE_DECOY_DIR" ]]; then
-    SERVE_ARGS+=(--decoy-dir "$MISTGATE_DECOY_DIR")
   fi
 }
 
@@ -1154,14 +1041,8 @@ print_summary() {
   local url
   url="https://$(site_host)"
   ok "Mistgate $MISTGATE_VERSION is installed"
-  log "Public address (decoy site): $url"
+  log "Public address: $url"
   log "Admin URL: $ADMIN_URL"
-  if [[ -n "$MISTGATE_DECOY_DIR" ]]; then
-    log "Decoy site directory: $MISTGATE_DECOY_DIR (copy your site there; no restart needed)"
-    if [[ -n "$DECOY_SITE_CHOSEN" ]]; then
-      warn "Starter decoy site '$DECOY_SITE_CHOSEN' is installed; replace its files with your own before sharing the address"
-    fi
-  fi
   if [[ -n "${SETUP_LINK:-}" ]]; then
     log "One-time setup link (valid for 30 minutes): $SETUP_LINK"
     warn "Open the setup link now and create the owner account. Do not paste it into shared chats."
@@ -1239,14 +1120,12 @@ main() {
   check_ports
   check_dns
   build_runtime_arrays
-  prepare_decoy_dir
   preflight_caddy
   download_release
   verify_release_checksums
   verify_panel_manifest
   verify_manifest_metadata
   install_binary
-  install_decoy_helper
   run_panel_setup
   build_serve_command
   write_unit
