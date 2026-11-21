@@ -65,6 +65,13 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
 |   |-- env.example
 |   |-- check-setup.sh
 |   `-- setup-mailcow.sh
+|-- mistgate/
+|   |-- env.example
+|   |-- check-setup.sh
+|   |-- setup-mistgate.sh
+|   |-- update-mistgate.sh
+|   |-- use-decoy-site.sh
+|   `-- decoy-sites/
 |-- netdata/
 |   |-- env.example
 |   |-- check-setup.sh
@@ -112,6 +119,7 @@ Service user model: [wiki/service-users.md](wiki/service-users.md)
     |-- ghost.md
     |-- ghost-coolify.md
     |-- mailcow.md
+    |-- mistgate.md
     |-- netdata.md
     |-- remnawave-node.md
     |-- remnawave-panel.md
@@ -139,6 +147,21 @@ nano .env
 bash setup-ubuntu.sh
 bash check-setup.sh
 ```
+
+`MISTGATE_ROLE` tunes the base for Mistgate without installing it:
+
+* `none` (default) — only SSH is open.
+* `panel` — opens `80/tcp` and `443/tcp` for the panel.
+* `node` — opens `80/tcp` and `443/tcp`, optionally adds the panel SSH key to `USER_NAME`, and optionally grants passwordless sudo so the panel's SSH node installer works.
+
+```bash
+cd ~/ubuntu-scripts/ubuntu
+cp env.example .env
+nano .env                         # MISTGATE_ROLE=panel or node
+bash setup-ubuntu.sh
+```
+
+The base keeps root and password SSH disabled. For a node, `MISTGATE_PANEL_SSH_NOPASSWD=true` is the explicit trade-off for automatic installation; otherwise use the panel's manual one-time command. Then install the panel from `mistgate/` or add the node in the panel UI.
 
 Documentation: [wiki/ubuntu.md](wiki/ubuntu.md)
 
@@ -286,6 +309,34 @@ sudo bash check-setup.sh
 After Mailcow and the separate Authentik VPS are ready, run `authentik/setup-mailcow-oidc.sh` on the Authentik VPS and complete Generic-OIDC in the Mailcow administrator UI. Keep the Mailcow hostname DNS-only in Cloudflare.
 
 Documentation: [wiki/mailcow.md](wiki/mailcow.md)
+
+### `mistgate/`
+
+One self-hosted Mistgate panel for a small VPN fleet, with its own TLS listener and a hidden admin.
+The panel owns `80/443` and installs node agents itself, over SSH from the admin UI or with a one-time manual command; there is no separate node module.
+
+```bash
+cd ~/ubuntu-scripts/mistgate
+cp env.example .env
+nano .env
+bash setup-mistgate.sh
+bash check-setup.sh
+```
+
+Point the panel hostname directly at the server: node agents pin the panel CA, and Let's Encrypt validates the domain on the server, so a CDN or TLS-terminating proxy in front of the panel does not work. Use a dedicated server; do not combine it with `caddy/` or Coolify unless you select `MISTGATE_TLS_MODE=caddy`.
+
+The setup creates `/srv/mistgate-decoy` and fills it with one of five starter sites from `mistgate/decoy-sites/` (`MISTGATE_DECOY_SITE=auto`, or `rybalka`, `palatki`, `gazirovka`, `bakery`, `veloservice`). Those are starting points: replace the files with your own site afterwards; no restart is needed.
+
+For nodes, set `MISTGATE_ROLE=node` in `ubuntu/.env` so the base opens `80/443`, then add the node in the panel. With the hardened base (root login and password auth closed, custom SSH port), use the manual one-time command from **Nodes → Add node**, or add the panel key plus `MISTGATE_PANEL_SSH_NOPASSWD=true` for the SSH auto-install. The module guide has both paths.
+
+Updates use the same signed-release verification and keep an automatic rollback:
+
+```bash
+cd ~/ubuntu-scripts/mistgate
+MISTGATE_UPGRADE_CONFIRMED=true bash update-mistgate.sh
+```
+
+Documentation: [wiki/mistgate.md](wiki/mistgate.md)
 
 ### `ghost/`
 
@@ -460,6 +511,8 @@ The Coolify module opens:
 * `6002/tcp`
 
 Coolify publishes ports through Docker. Docker NAT rules can bypass ordinary UFW filtering, so use the provider firewall to control public exposure. After configuring a Coolify domain and integrated proxy, direct access to `8000`, `6001`, and `6002` can normally be closed at the provider firewall.
+
+The Mistgate panel module opens `80/tcp` and `443/tcp` for the panel itself (and `8443/tcp` only in `MISTGATE_TLS_MODE=caddy`, for the node agent listener). It does not use Docker, so ordinary UFW rules apply. UFW is never enabled by the module; it only adds rules when UFW is already active. Node servers are installed by the panel, not by a repository module: the panel's installer opens `80/tcp`, `443/tcp`, and `443/udp` in an active UFW, and the agent adds the UDP/TCP ports of the profiles it applies.
 
 The Ghost module does not open public ports directly. Ghost listens on a local port, and Caddy proxies public HTTP/HTTPS traffic to it.
 

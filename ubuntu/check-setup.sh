@@ -69,6 +69,10 @@ reset_env_vars() {
   PORT_SSH=""
   DISABLE_IPV6=""
   IPV6_INTERFACE=""
+  USER_NAME=""
+  MISTGATE_ROLE="none"
+  MISTGATE_PANEL_SSH_PUB=""
+  MISTGATE_PANEL_SSH_NOPASSWD="false"
 }
 
 load_env() {
@@ -88,6 +92,10 @@ load_env() {
   else
     warn "Environment file not found: $ENV_FILE"
   fi
+
+  MISTGATE_ROLE="${MISTGATE_ROLE:-none}"
+  MISTGATE_PANEL_SSH_PUB="${MISTGATE_PANEL_SSH_PUB:-}"
+  MISTGATE_PANEL_SSH_NOPASSWD="${MISTGATE_PANEL_SSH_NOPASSWD:-false}"
 }
 
 check_cmd() {
@@ -179,11 +187,31 @@ check_ipv6() {
   ipv6_lo="$(sysctl -n net.ipv6.conf.lo.disable_ipv6 2>/dev/null || echo unknown)"
 
   if [[ "$DISABLE_IPV6" == "true" ]]; then
-    [[ "$ipv6_all" == "1" ]] && ok "net.ipv6.conf.all.disable_ipv6=1" || err "IPv6 all disable flag expected 1, got $ipv6_all"
-    [[ "$ipv6_default" == "1" ]] && ok "net.ipv6.conf.default.disable_ipv6=1" || err "IPv6 default disable flag expected 1, got $ipv6_default"
-    [[ "$ipv6_lo" == "1" ]] && ok "net.ipv6.conf.lo.disable_ipv6=1" || err "IPv6 lo disable flag expected 1, got $ipv6_lo"
-    [[ -f "$IPV6_DISABLE_SYSCTL_FILE" ]] && ok "IPv6 disable config is present" || warn "IPv6 disable config is missing: $IPV6_DISABLE_SYSCTL_FILE"
-    [[ ! -f "$IPV6_ENABLE_SYSCTL_FILE" ]] && ok "IPv6 enable config is absent" || warn "IPv6 enable config still exists: $IPV6_ENABLE_SYSCTL_FILE"
+    if [[ "$ipv6_all" == "1" ]]; then
+      ok "net.ipv6.conf.all.disable_ipv6=1"
+    else
+      err "IPv6 all disable flag expected 1, got $ipv6_all"
+    fi
+    if [[ "$ipv6_default" == "1" ]]; then
+      ok "net.ipv6.conf.default.disable_ipv6=1"
+    else
+      err "IPv6 default disable flag expected 1, got $ipv6_default"
+    fi
+    if [[ "$ipv6_lo" == "1" ]]; then
+      ok "net.ipv6.conf.lo.disable_ipv6=1"
+    else
+      err "IPv6 lo disable flag expected 1, got $ipv6_lo"
+    fi
+    if [[ -f "$IPV6_DISABLE_SYSCTL_FILE" ]]; then
+      ok "IPv6 disable config is present"
+    else
+      warn "IPv6 disable config is missing: $IPV6_DISABLE_SYSCTL_FILE"
+    fi
+    if [[ ! -f "$IPV6_ENABLE_SYSCTL_FILE" ]]; then
+      ok "IPv6 enable config is absent"
+    else
+      warn "IPv6 enable config still exists: $IPV6_ENABLE_SYSCTL_FILE"
+    fi
     return
   fi
 
@@ -206,9 +234,21 @@ check_ipv6() {
       check_sysctl_value "net.ipv6.conf.${iface}.use_tempaddr" 0
     fi
 
-    [[ -f /proc/net/if_inet6 ]] && ok "IPv6 kernel support is active" || err "IPv6 kernel support is not active"
-    [[ -f "$IPV6_ENABLE_SYSCTL_FILE" ]] && ok "IPv6 enable config is present" || err "IPv6 enable config is missing: $IPV6_ENABLE_SYSCTL_FILE"
-    [[ ! -f "$IPV6_DISABLE_SYSCTL_FILE" ]] && ok "IPv6 disable config is absent" || err "IPv6 disable config still exists: $IPV6_DISABLE_SYSCTL_FILE"
+    if [[ -f /proc/net/if_inet6 ]]; then
+      ok "IPv6 kernel support is active"
+    else
+      err "IPv6 kernel support is not active"
+    fi
+    if [[ -f "$IPV6_ENABLE_SYSCTL_FILE" ]]; then
+      ok "IPv6 enable config is present"
+    else
+      err "IPv6 enable config is missing: $IPV6_ENABLE_SYSCTL_FILE"
+    fi
+    if [[ ! -f "$IPV6_DISABLE_SYSCTL_FILE" ]]; then
+      ok "IPv6 disable config is absent"
+    else
+      err "IPv6 disable config still exists: $IPV6_DISABLE_SYSCTL_FILE"
+    fi
 
     if [[ -f "$UFW_DEFAULTS_FILE" ]] && grep -qE '^IPV6=yes$' "$UFW_DEFAULTS_FILE"; then
       ok "UFW IPv6 support is enabled"
@@ -264,11 +304,23 @@ EOF
 
   if [[ -n "${PORT_SSH:-}" ]]; then
     actual="$(awk 'tolower($1) == "port" { print $2; exit }' <<< "$effective_config")"
-    [[ "$actual" == "$PORT_SSH" ]] && ok "Effective SSH port: $PORT_SSH" || err "Effective SSH port expected $PORT_SSH, got ${actual:-missing}"
+    if [[ "$actual" == "$PORT_SSH" ]]; then
+      ok "Effective SSH port: $PORT_SSH"
+    else
+      err "Effective SSH port expected $PORT_SSH, got ${actual:-missing}"
+    fi
   fi
 
-  [[ -f "$SSHD_DROPIN_FILE" ]] && ok "Managed SSH drop-in is present: $SSHD_DROPIN_FILE" || err "Managed SSH drop-in is missing: $SSHD_DROPIN_FILE"
-  [[ ! -f "$SSHD_LEGACY_DROPIN_FILE" ]] && ok "Obsolete SSH drop-in is absent" || warn "Obsolete SSH drop-in is still present: $SSHD_LEGACY_DROPIN_FILE"
+  if [[ -f "$SSHD_DROPIN_FILE" ]]; then
+    ok "Managed SSH drop-in is present: $SSHD_DROPIN_FILE"
+  else
+    err "Managed SSH drop-in is missing: $SSHD_DROPIN_FILE"
+  fi
+  if [[ ! -f "$SSHD_LEGACY_DROPIN_FILE" ]]; then
+    ok "Obsolete SSH drop-in is absent"
+  else
+    warn "Obsolete SSH drop-in is still present: $SSHD_LEGACY_DROPIN_FILE"
+  fi
 }
 
 check_ufw() {
@@ -290,6 +342,87 @@ check_ufw() {
   ufw status numbered || true
 }
 
+check_mistgate_role() {
+  section "Mistgate profile"
+  info "MISTGATE_ROLE=$MISTGATE_ROLE"
+  local sudoers_file="/etc/sudoers.d/90-mistgate-panel"
+
+  case "$MISTGATE_ROLE" in
+    none)
+      if [[ -f "$sudoers_file" ]]; then
+        warn "Passwordless sudo file remains from a previous node profile: $sudoers_file"
+      fi
+      ;;
+    panel)
+      if ufw_has_tcp_port 80; then
+        ok "Mistgate panel port is open in UFW: 80/tcp"
+      else
+        err "Mistgate panel port is missing in UFW: 80/tcp"
+      fi
+      if ufw_has_tcp_port 443; then
+        ok "Mistgate panel port is open in UFW: 443/tcp"
+      else
+        err "Mistgate panel port is missing in UFW: 443/tcp"
+      fi
+      if [[ -f "$sudoers_file" ]]; then
+        warn "Passwordless sudo file exists although MISTGATE_ROLE=panel: $sudoers_file"
+      fi
+      ;;
+    node)
+      if ufw_has_tcp_port 80; then
+        ok "Mistgate node port is open in UFW: 80/tcp"
+      else
+        err "Mistgate node port is missing in UFW: 80/tcp"
+      fi
+      if ufw_has_tcp_port 443; then
+        ok "Mistgate node port is open in UFW: 443/tcp"
+      else
+        err "Mistgate node port is missing in UFW: 443/tcp"
+      fi
+      if command -v nft >/dev/null 2>&1; then
+        ok "Command found: nft"
+      else
+        err "Command not found: nft (install nftables)"
+      fi
+      if [[ -c /dev/net/tun ]]; then
+        ok "/dev/net/tun is available"
+      else
+        warn "/dev/net/tun is missing; AmneziaWG userspace and WARP will not work"
+      fi
+
+      if [[ -n "$MISTGATE_PANEL_SSH_PUB" ]]; then
+        if [[ -z "$USER_NAME" ]]; then
+          err "USER_NAME is empty; cannot check the panel SSH key"
+        elif [[ -f "/home/$USER_NAME/.ssh/authorized_keys" ]] \
+          && grep -Fqx "$MISTGATE_PANEL_SSH_PUB" "/home/$USER_NAME/.ssh/authorized_keys"; then
+          ok "Mistgate panel SSH key is present for $USER_NAME"
+        else
+          err "Mistgate panel SSH key is missing from /home/$USER_NAME/.ssh/authorized_keys"
+        fi
+      else
+        info "No panel SSH key configured; use the panel's manual one-time install command"
+      fi
+
+      if [[ "$MISTGATE_PANEL_SSH_NOPASSWD" == "true" ]]; then
+        if [[ -f "$sudoers_file" ]] && grep -Fq "NOPASSWD:ALL" "$sudoers_file"; then
+          if command -v visudo >/dev/null 2>&1 && visudo -cf "$sudoers_file" >/dev/null 2>&1; then
+            ok "Passwordless sudo for the panel installer is valid: $sudoers_file"
+          else
+            err "Passwordless sudo file is invalid: $sudoers_file"
+          fi
+        else
+          err "Passwordless sudo is enabled in env but $sudoers_file is missing or incomplete"
+        fi
+      elif [[ -f "$sudoers_file" ]]; then
+        warn "Passwordless sudo file exists although MISTGATE_PANEL_SSH_NOPASSWD is not true: $sudoers_file"
+      fi
+      ;;
+    *)
+      err "MISTGATE_ROLE must be none, panel or node (found: $MISTGATE_ROLE)"
+      ;;
+  esac
+}
+
 main() {
   require_root
   load_env
@@ -297,6 +430,7 @@ main() {
   check_ipv6
   check_ssh
   check_ufw
+  check_mistgate_role
 
   section "Summary"
   if (( ERROR_COUNT > 0 )); then

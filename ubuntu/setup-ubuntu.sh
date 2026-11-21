@@ -69,6 +69,9 @@ reset_env_vars() {
   SERVER_NAME=""
   DISABLE_IPV6=""
   IPV6_INTERFACE=""
+  MISTGATE_ROLE=""
+  MISTGATE_PANEL_SSH_PUB=""
+  MISTGATE_PANEL_SSH_NOPASSWD=""
 }
 
 load_env() {
@@ -80,6 +83,37 @@ load_env() {
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
+
+  MISTGATE_ROLE="${MISTGATE_ROLE:-none}"
+  MISTGATE_PANEL_SSH_PUB="${MISTGATE_PANEL_SSH_PUB:-}"
+  MISTGATE_PANEL_SSH_NOPASSWD="${MISTGATE_PANEL_SSH_NOPASSWD:-false}"
+}
+
+validate_mistgate_role() {
+  case "$MISTGATE_ROLE" in
+    none|panel|node) ;;
+    *) fail "MISTGATE_ROLE must be none, panel or node" ;;
+  esac
+
+  [[ "$MISTGATE_PANEL_SSH_NOPASSWD" == "true" || "$MISTGATE_PANEL_SSH_NOPASSWD" == "false" ]] \
+    || fail "MISTGATE_PANEL_SSH_NOPASSWD must be true or false"
+
+  if [[ "$MISTGATE_ROLE" != "node" ]]; then
+    [[ -z "$MISTGATE_PANEL_SSH_PUB" ]] \
+      || fail "MISTGATE_PANEL_SSH_PUB is only used with MISTGATE_ROLE=node"
+    [[ "$MISTGATE_PANEL_SSH_NOPASSWD" != "true" ]] \
+      || fail "MISTGATE_PANEL_SSH_NOPASSWD=true requires MISTGATE_ROLE=node"
+  fi
+
+  if [[ "$MISTGATE_PANEL_SSH_NOPASSWD" == "true" && -z "$MISTGATE_PANEL_SSH_PUB" ]]; then
+    fail "MISTGATE_PANEL_SSH_NOPASSWD=true requires MISTGATE_PANEL_SSH_PUB, otherwise the panel still cannot log in"
+  fi
+
+  if [[ -n "$MISTGATE_PANEL_SSH_PUB" ]]; then
+    [[ "$MISTGATE_PANEL_SSH_PUB" != *$'\n'* ]] || fail "MISTGATE_PANEL_SSH_PUB must be a single line"
+    [[ "$MISTGATE_PANEL_SSH_PUB" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com)[[:space:]]+AAAA[A-Za-z0-9+/=]+([[:space:]].*)?$ ]] \
+      || fail "MISTGATE_PANEL_SSH_PUB must be an OpenSSH public key, for example ssh-ed25519 AAAA... mistgate-panel"
+  fi
 }
 
 require_vars() {
@@ -320,6 +354,47 @@ setup_ssh_key() {
   else
     log "SSH public key is already present"
   fi
+
+  if [[ "$MISTGATE_ROLE" == "node" && -n "$MISTGATE_PANEL_SSH_PUB" ]]; then
+    if ! grep -Fqx "$MISTGATE_PANEL_SSH_PUB" "$auth_keys"; then
+      log "Adding the Mistgate panel SSH key for $USER_NAME"
+      printf '%s\n' "$MISTGATE_PANEL_SSH_PUB" >> "$auth_keys"
+    else
+      log "Mistgate panel SSH key is already present for $USER_NAME"
+    fi
+  fi
+
+  chown -R "$USER_NAME:$USER_NAME" "$ssh_dir"
+}
+
+configure_mistgate_panel_sudo() {
+  local sudoers_file="/etc/sudoers.d/90-mistgate-panel"
+  local temp_file
+
+  if [[ "$MISTGATE_ROLE" != "node" || "$MISTGATE_PANEL_SSH_NOPASSWD" != "true" ]]; then
+    if [[ -f "$sudoers_file" ]]; then
+      rm -f "$sudoers_file"
+      log "Removed $sudoers_file because passwordless panel sudo is not enabled"
+    fi
+    return 0
+  fi
+
+  require_cmd visudo
+  temp_file="$(mktemp)"
+  chmod 0440 "$temp_file"
+  cat > "$temp_file" <<EOF
+# Managed by ubuntu-scripts: Mistgate panel SSH installer
+$USER_NAME ALL=(ALL) NOPASSWD:ALL
+EOF
+
+  if ! visudo -cf "$temp_file" >/dev/null 2>&1; then
+    rm -f "$temp_file"
+    fail "Generated sudoers rule is invalid; passwordless sudo was not added"
+  fi
+
+  install -m 0440 "$temp_file" "$sudoers_file"
+  rm -f "$temp_file"
+  log "Granted passwordless sudo to $USER_NAME for the Mistgate panel installer"
 }
 
 verify_sshd_effective_config() {
@@ -420,6 +495,11 @@ install_packages() {
   export DEBIAN_FRONTEND=noninteractive
   export UCF_FORCE_CONFFOLD=1
   export NEEDRESTART_MODE=a
+  local -a packages=(nano fail2ban ufw less ca-certificates curl openssl gnupg)
+  if [[ "$MISTGATE_ROLE" == "node" ]]; then
+    packages+=(nftables)
+  fi
+
   apt-get update
   apt-get -y \
     -o Dpkg::Options::="--force-confdef" \
@@ -428,7 +508,21 @@ install_packages() {
   apt-get -y \
     -o Dpkg::Options::="--force-confdef" \
     -o Dpkg::Options::="--force-confold" \
-    install nano fail2ban ufw less ca-certificates curl openssl gnupg
+    install "${packages[@]}"
+}
+
+check_mistgate_node_prerequisites() {
+  [[ "$MISTGATE_ROLE" == "node" ]] || return 0
+  if [[ ! -c /dev/net/tun ]]; then
+    log_line "WARN" "/dev/net/tun is missing; AmneziaWG userspace and WARP will not work. Enable TUN in the provider panel."
+  else
+    log "/dev/net/tun is available for AmneziaWG and WARP"
+  fi
+  if command -v nft >/dev/null 2>&1; then
+    log "nft is available for the Mistgate node agent"
+  else
+    log_line "WARN" "nft is missing after package installation; install nftables before adding this node"
+  fi
 }
 
 configure_hostname() {
@@ -444,6 +538,15 @@ configure_root_password() {
 configure_ufw() {
   log "Configuring UFW"
   ufw allow "$PORT_SSH/tcp"
+
+  case "$MISTGATE_ROLE" in
+    panel|node)
+      log "Opening Mistgate ports 80/tcp and 443/tcp in UFW"
+      ufw allow "80/tcp"
+      ufw allow "443/tcp"
+      ;;
+  esac
+
   ufw --force enable
   ufw reload
 }
@@ -465,6 +568,7 @@ main() {
   load_env
   require_vars
   validate_port
+  validate_mistgate_role
 
   if [[ -n "${DISABLE_IPV6:-}" ]]; then
     require_cmd sysctl
@@ -477,6 +581,8 @@ main() {
   create_or_update_user
   setup_ssh_key
   install_packages
+  check_mistgate_node_prerequisites
+  configure_mistgate_panel_sudo
   if [[ "${DISABLE_IPV6:-}" == "true" ]]; then
     disable_ipv6
   elif [[ "${DISABLE_IPV6:-}" == "false" ]]; then
@@ -485,6 +591,23 @@ main() {
   configure_ufw
   configure_ssh
   ensure_fail2ban
+
+  case "$MISTGATE_ROLE" in
+    panel)
+      log "Mistgate panel profile: 80/tcp and 443/tcp are open; continue with the mistgate/ module"
+      ;;
+    node)
+      log "Mistgate node profile: 80/tcp and 443/tcp are open"
+      if [[ -n "$MISTGATE_PANEL_SSH_PUB" ]]; then
+        log "The panel SSH key is installed for $USER_NAME"
+      fi
+      if [[ "$MISTGATE_PANEL_SSH_NOPASSWD" == "true" ]]; then
+        log "Passwordless sudo is enabled for $USER_NAME (panel automatic node install)"
+      else
+        log "Passwordless sudo is off; use the panel's manual one-time install command"
+      fi
+      ;;
+  esac
 
   local connect_host="${SERVER_IP_V4:-<SERVER_IP>}"
   log "Done. Test the new SSH login with: ssh $USER_NAME@$connect_host -p $PORT_SSH"
