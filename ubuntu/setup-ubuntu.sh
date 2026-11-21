@@ -65,7 +65,6 @@ reset_env_vars() {
   USER_PASSWORD=""
   PORT_SSH=""
   SSH_PUB=""
-  SERVER_IP_V4=""
   SERVER_NAME=""
   DISABLE_IPV6=""
   IPV6_INTERFACE=""
@@ -609,8 +608,7 @@ main() {
       ;;
   esac
 
-  local connect_host="${SERVER_IP_V4:-<SERVER_IP>}"
-  log "Done. Test the new SSH login with: ssh $USER_NAME@$connect_host -p $PORT_SSH"
+  log "Done. Test the new SSH login with: ssh $USER_NAME@<SERVER_IP> -p $PORT_SSH"
   log "Keep the current root session open until the new SSH session works in a separate terminal"
 }
 

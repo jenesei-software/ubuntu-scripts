@@ -66,7 +66,6 @@ SERVER_NAME=
 Optional variables:
 
 ```env
-SERVER_IP_V4=
 DISABLE_IPV6=
 IPV6_INTERFACE=
 
